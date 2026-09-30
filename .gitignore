@@ -25,3 +25,6 @@ data/database/*
 
 # Runtime logs
 logs/
+
+# Generated test fixtures (rebuilt by tests on first run)
+tests/fixtures/*.mp4

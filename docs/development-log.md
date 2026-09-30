@@ -100,3 +100,38 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 阶段二：视频信息解析 — 2026-09-30
+
+### 任务范围
+
+对应 `计划书/详细步骤.md` 阶段二（2.1 ~ 2.4）：ffprobe 元数据提取、三类异常处理、测试视频 fixture 与 pytest 全绿。
+
+### 完成内容
+
+- [x] 2.1 `app/services/video_service.py`：`get_video_info(video_path)`，ffprobe（`-show_format -show_streams` JSON 模式）返回 filename、size、duration、width、height、fps（`r_frame_rate` 用 `fractions.Fraction` 解析）、video_codec、audio_codec
+- [x] 2.2 自定义异常层次：`VideoServiceError` 基类 → `VideoNotFoundError` / `InvalidVideoError`（非视频、无视频流、ffprobe 失败/超时/JSON 非法）/ `FFmpegNotFoundError`（定位顺序 `config.FFMPEG_DIR` → `shutil.which`，缺失时给出安装提示）
+- [x] 2.3 `tests/test_video.py`：session fixture 用 ffmpeg 现场生成 `tests/fixtures/sample.mp4`（2s，320x240，10fps，h264+aac）；4 条用例覆盖正常、文件不存在、非视频文件、ffprobe 缺失（monkeypatch）
+- [x] 2.4 pytest 全绿后 commit（见下）
+
+### 实现要点
+
+- Windows 下 ffprobe 子进程带 `CREATE_NO_WINDOW`，避免控制台窗口闪现。
+- ffprobe 走 PATH（本机 `E:\ffmpeg\...\bin` 已在 PATH，`FFMPEG_DIR=""` 即可），未写死路径。
+
+### 验证结果
+
+- `pytest` 全量：**6 passed**（2 个 API + 4 个视频解析），多次运行稳定。
+- 正常视频断言：`duration≈2.0`、`320x240`、`fps==10.0`、`h264/aac`，均按 ffprobe 实际输出验证通过。
+- 异常路径：不存在 → `VideoNotFoundError`；`.txt` → `InvalidVideoError`；`shutil.which→None` → `FFmpegNotFoundError`，均实测触发。
+
+### 遇到的问题与观察
+
+1. 加入 `test_video.py` 后的**第一次**运行出现过一次 `PytestUnhandledThreadExceptionWarning`（伴 ResourceWarning 提示，输出被截断未抓到完整堆栈）；随后 10 次连续运行（含 `-W error` 模式）均 6 passed、未复现。怀疑为 starlette TestClient/httpx 关闭时的偶发线程竞态（与已知弃用提示同源），**尚未定位到根因，留观**；若再次出现将按流程定位。
+2. 测试 fixture `tests/fixtures/sample.mp4` 为可再生产物，加入 `.gitignore`（测试首次运行会自动重建）。
+
+### 个人确认
+
+（待用户实际运行确认后填写）
