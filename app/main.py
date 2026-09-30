@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import config
+from app.database.database import init_db
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,7 +18,8 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     config.ensure_dirs()
-    logger.info("startup: runtime directories ready")
+    init_db()
+    logger.info("startup: runtime directories and database ready")
     yield
 
 

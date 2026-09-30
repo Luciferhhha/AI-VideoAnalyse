@@ -11,8 +11,8 @@ UPLOADS_DIR = DATA_DIR / "uploads"
 OUTPUTS_DIR = DATA_DIR / "outputs"
 DATABASE_DIR = DATA_DIR / "database"
 
-# SQLite 数据库文件
-DATABASE_URL = f"sqlite:///{DATABASE_DIR / 'video_agent.db'}"
+# SQLite 数据库文件（posix 路径，避免 Windows 反斜杠在 sqlite URL 中出问题）
+DATABASE_URL = f"sqlite:///{(DATABASE_DIR / 'video_agent.db').as_posix()}"
 
 # 上传限制
 MAX_UPLOAD_SIZE_MB = 500

@@ -135,3 +135,50 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 阶段三：数据库设计 — 2026-09-30
+
+### 任务范围
+
+对应 `计划书/详细步骤.md` 阶段三（3.1 ~ 3.5）：SQLite + SQLAlchemy 模型、引擎/会话/Base、Repository 层、初始化与 CRUD、pytest。
+
+字段与状态机严格按计划书《视频分析项目.docx》"六、第三阶段"：
+- `Video`：id, filename, filepath, duration, width, height, fps, created_at
+- `AnalysisTask`：id, video_id, status, created_at, started_at, finished_at, error_message
+- `AnalysisResult`：id, task_id, summary, keywords, chapters, transcript, created_at
+- 状态机：pending / running / success / failed
+
+### 完成内容
+
+- [x] 3.1 `app/database/models.py`：三个模型（SQLAlchemy 2.x `Mapped` 风格）；`TaskStatus` 常量；`analysis_tasks.status` 加 CHECK 约束；级联删除（删 Video → 连带 Task → Result）
+- [x] 3.2 `app/database/database.py`（`Base`、`create_db_engine()` 引擎工厂、`SessionLocal`、`init_db()`、`get_db()` 依赖）+ `app/database/repository.py`（`VideoRepository` / `TaskRepository` / `ResultRepository`，路由层禁止直接 SQL）
+- [x] 3.3 初始化挂入 `main.py` lifespan（启动即建表，幂等 create_all）；CRUD + 状态流转时间戳自动打点（running→started_at，success/failed→finished_at，failed 记 error_message）
+- [x] 3.4 `tests/test_database.py` 7 条用例：建表、Video CRUD、状态机全流转、failed 记录错误、非法状态拒绝、外键约束、级联删除
+- [x] 3.5 commit：`feat: add video analysis database`（见下）
+
+### 实现要点
+
+- SQLite `PRAGMA foreign_keys=ON` 通过引擎工厂的 connect 事件统一打开（生产库与测试库复用同一工厂，保证测试测的就是真实行为）。
+- `DATABASE_URL` 改用 `.as_posix()`（Windows 反斜杠路径在 sqlite URL 中不可靠）。
+- Repository 变更方法自动 `commit`；`update_status` 先校验状态合法性（非法抛 `InvalidStatusError`，不污染数据）。
+
+### 遇到的问题与解决（按"分析→定位→修改→再测试"）
+
+**问题：测试全绿但真实库 `tables: []`（没有建表）。**
+
+1. 分析：真实库由 lifespan 的 `init_db()` 创建，但测试一直没触发过它；
+2. 定位：`tests/test_api.py` 写的是 `client = TestClient(app)` —— **没有 `with` 上下文，FastAPI 的 lifespan 根本不执行**（阶段一就是这么写的，`ensure_dirs` 也一直没在测试中跑过，只是恰好目录在磁盘上有）；
+3. 修改：改为 fixture 形式 `with TestClient(app) as test_client: yield`；并新增 `test_lifespan_creates_database_tables` 断言真实库含全部业务表；
+4. 再测试：`14 passed`；随后用独立进程查真实库 → `['analysis_results', 'analysis_tasks', 'videos']` ✅
+
+### 验证结果
+
+- `pytest` 全量：**14 passed**（2 API+1 lifespan 建表 + 4 视频 + 7 数据库），仅剩已知 starlette 弃用提示。
+- 真实库初始化：`data/database/video_agent.db` 三张表齐全（独立进程 `inspect(engine)` 验证，非测试库）。
+- 状态机与约束：非法状态被拒且数据未污染、外键 IntegrityError、级联删除，均有断言并通过。
+
+### 个人确认
+
+（待用户实际运行确认后填写）
