@@ -53,6 +53,29 @@
 - 用系统 `py.exe run.py`（模拟双击）启动 → `GET /health` 返回 200 `{"status":"ok"}` ✅
 - `pytest` 回归：`2 passed` ✅
 
+### 追加修复二（同日，用户反馈修复后仍闪退）
+
+**现象**：用户双击 `run.py`，cmd 窗口仍然"一闪而过，根本不停留"。
+
+**复现与定位**（按"分析→定位→修改→再测试"流程）：
+1. 用文件关联方式（`py.exe`）复现正常启动、关闭后立刻重启 → 均正常，排除 TIME_WAIT/快速重启问题；
+2. **关键复现**：先用哑进程占住 8000 端口再启动 → uvicorn 报
+   `ERROR: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8000): [winerror 10048] 通常每个套接字地址(协议/网络地址/端口)只允许使用一次。`
+   随后进程直接退出 → 双击窗口瞬间关闭，且错误信息完全看不到。
+   （用户上次启动的服务若未真正退出、或连点两次，就会踩中此场景）
+3. 结论：旧版 `run.py` 对"启动失败"没有任何停留/提示机制，任何启动错误都会表现为闪退。
+
+**修改**：
+- `run.py` 重写启动流程：① 解释器预检（自动切 `.venv`）→ ② **端口预检**（`netstat` 找占用进程，区分"服务已在运行，直接访问 /health"与"端口被其他进程占用，给出 pid/进程名"）→ ③ 启动 uvicorn；任何异常打印完整 traceback 并**停留等待回车**，同时追加记录到 `logs/launcher.log`（可用 `VIDEO_AGENT_NO_PAUSE=1` 跳过停留）。
+- 新增 `tools/launch_probe.py`：启动行为探针，可观测验证三场景（normal / conflict / healthy），stdin 保持打开使"停留"表现为进程存活。
+- `.gitignore` 增加 `logs/`。
+
+**再测试**（`tools/launch_probe.py`，均为 exit=0）：
+- `normal`：进程存活=True、`/health` 正常=True
+- `conflict`：端口被占时进程停留不退出=True、`launcher.log` 记录"端口 8000 已被占用"=True
+- `healthy`：服务已运行时二次启动停留并提示=True、原服务仍正常=True
+- `pytest` 回归：`2 passed` ✅；测试后 8000 端口干净释放
+
 ### 个人确认
 
 （待用户实际运行确认后填写）
