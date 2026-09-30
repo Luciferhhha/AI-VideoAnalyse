@@ -182,3 +182,40 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 阶段四：视频上传 API — 2026-09-30
+
+### 任务范围
+
+对应 `计划书/详细步骤.md` 阶段四（4.1 ~ 4.5）：`POST /videos`、`GET /videos/{video_id}`、Pydantic 出入参、统一异常处理、测试。
+
+### 完成内容
+
+- [x] 4.1 `app/api/routes_videos.py`：`POST /videos` —— 扩展名检查（400）→ 1MB 分块边写边计数大小检查（超限 413，异常/超限均删除残留文件）→ 保存 `data/uploads/{uuid8}_{原名}`（防同名冲突、`Path(...).name` 防路径穿越）→ 调阶段二 `get_video_info` 填 duration/width/height/fps（解析失败删文件后抛 `VideoServiceError`）→ `VideoRepository.create` → **201** 返回 `{"id", "filename"}`
+- [x] 4.2 `GET /videos/{video_id}` → Pydantic `VideoDetailResponse`（id, filename, duration, width, height, fps, created_at）；不存在 → 404 `{"detail": "视频不存在：id=..."}`
+- [x] 4.3 `app/schemas/video.py`（`VideoCreateResponse` / `VideoDetailResponse`，`response_model` 强制出入参校验）；`main.py` 注册 `VideoServiceError` 全局 handler：`VideoNotFoundError→404`、`InvalidVideoError→400`、其他（含 `FFmpegNotFoundError`）→500，envelope 统一为 `{"detail": ...}`（与 FastAPI 默认 `HTTPException` 响应格式一致）
+- [x] 4.4 `tests/test_upload.py` 5 条：正常上传（201 + 返回体 + 文件落盘 + 元数据）、非法扩展名 400、伪装 mp4 的垃圾内容 400 且残留文件被清理、超大文件 413（monkeypatch `MAX_UPLOAD_SIZE_MB=0`）、视频不存在 404
+- [x] 4.5 commit：`feat: add video upload API`（见下）
+
+### 实现要点
+
+- **测试隔离**：上传测试用 fixture 把 `config.UPLOADS_DIR` monkeypatch 到 `tmp_path`、用 `create_db_engine` 建临时 SQLite + `app.dependency_overrides[get_db]`，测试不碰真实 `data/uploads` 与真实库（已实测：真实 uploads 只剩 `.gitkeep`、真实库 videos 行数 0）。
+- `sample_video` fixture 从 `tests/test_video.py` 上移到 `tests/conftest.py`（`FIXTURES_DIR` 一并上移），上传测试与视频解析测试共用。
+- 顺手加固 `test_ffmpeg_missing`：原先依赖"别的测试先跑过导致 fixture 文件已存在"的隐式顺序，改为 `tmp_path` 占位文件，单跑该用例也成立。
+
+### 遇到的问题与解决（按"分析→定位→修改→再测试"）
+
+1. **收集期报错 `RuntimeError: Form data requires "python-multipart" to be installed.`**：FastAPI 的 `UploadFile/File` 依赖 python-multipart → 安装 `python-multipart 0.0.32` 并登记 `requirements.txt`（`python-multipart>=0.0.9`）→ 重跑全绿。
+2. **核验脚本两次失败（核验手段问题，非功能问题）**：`python -c` 传多行代码时 PowerShell 把内嵌引号剥掉（`NameError: name 'roundtrip' is not defined`）；改写临时文件后又因脚本在 `%TEMP%` 导入不到 `app`（`ModuleNotFoundError`）→ 临时文件内手动 `sys.path.insert(0, 项目根)` 解决。
+
+### 验证结果
+
+- `pytest` 全量：**19 passed**（3 API + 4 视频 + 7 数据库 + 5 上传）。
+- 真实环境 `get_db` 会话往返（独立进程、非测试库）：建→查→删全通过；真实库 `['analysis_results', 'analysis_tasks', 'videos']` 三表齐全，`videos` 行数 0（测试零污染）。
+- 隔离性：真实 `data/uploads/` 仅 `.gitkeep`；`tests/fixtures/sample.mp4` 存在（fixture 正常）。
+
+### 个人确认
+
+（待用户实际运行确认后填写）
