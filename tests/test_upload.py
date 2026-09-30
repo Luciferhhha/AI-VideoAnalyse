@@ -1,7 +1,7 @@
 """阶段四测试：视频上传与查询 API。
 
-- 测试隔离：临时 SQLite 库（dependency_overrides[get_db]）+ 上传目录 monkeypatch 到 tmp，
-  不污染真实 data/uploads 与 data/database。
+- 测试隔离：共用 `tests/conftest.py` 的 `client` fixture（临时 SQLite 库 +
+  上传目录 monkeypatch 到 tmp），不污染真实 data/uploads 与 data/database。
 - 覆盖：正常上传（201 + 返回体 + 文件落盘 + 记录可查）、非法扩展名 400、
   伪装成 mp4 的非视频内容 400（且残留文件被清理）、超大文件 413、视频不存在 404。
 """
@@ -10,35 +10,9 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import sessionmaker
 
 from app import config
-from app.database.database import Base, create_db_engine, get_db
-from app.main import app
 from tests.conftest import FIXTURES_DIR
-
-
-@pytest.fixture()
-def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    # 上传目录重定向到临时目录
-    monkeypatch.setattr(config, "UPLOADS_DIR", tmp_path / "uploads")
-    # 数据库重定向到临时库
-    engine = create_db_engine(f"sqlite:///{tmp_path.as_posix()}/upload_api.db")
-    Base.metadata.create_all(engine)
-    testing_session = sessionmaker(bind=engine, expire_on_commit=False)
-
-    def _override_get_db():
-        session = testing_session()
-        try:
-            yield session
-        finally:
-            session.close()
-
-    app.dependency_overrides[get_db] = _override_get_db
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
-    engine.dispose()
 
 
 def _upload(client: TestClient, name: str, content: bytes | None = None, path: Path | None = None):

@@ -1,4 +1,4 @@
-"""基础测试配置：保证从项目根目录可导入 app 包 + 共享测试视频 fixture。"""
+"""基础测试配置：保证从项目根目录可导入 app 包 + 共享测试视频与客户端 fixture。"""
 
 import shutil
 import subprocess
@@ -6,12 +6,44 @@ import sys
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+
+
+@pytest.fixture()
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """隔离客户端：上传目录重定向到 tmp + 临时 SQLite 库（dependency_overrides）。
+
+    阶段四（上传）、阶段五（异步任务）共用；后台任务经 `db.get_bind()` 拿到
+    同一个临时引擎，因此也不会污染真实 data/ 与 data/database。
+    """
+    from app import config
+    from app.database.database import Base, create_db_engine, get_db
+    from app.main import app
+
+    monkeypatch.setattr(config, "UPLOADS_DIR", tmp_path / "uploads")
+    engine = create_db_engine(f"sqlite:///{tmp_path.as_posix()}/test_api.db")
+    Base.metadata.create_all(engine)
+    testing_session = sessionmaker(bind=engine, expire_on_commit=False)
+
+    def _override_get_db():
+        session = testing_session()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = _override_get_db
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+    engine.dispose()
 
 
 @pytest.fixture(scope="session")

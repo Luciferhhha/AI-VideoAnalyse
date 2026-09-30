@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from app import config
+from app.api.routes_tasks import router as tasks_router
 from app.api.routes_videos import router as videos_router
 from app.database.database import init_db
 from app.services.video_service import (
@@ -34,6 +35,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="视频智能分析平台", version="0.1.0", lifespan=lifespan)
 
 app.include_router(videos_router)
+app.include_router(tasks_router)
 
 
 @app.exception_handler(VideoServiceError)

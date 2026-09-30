@@ -219,3 +219,47 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 阶段五：异步分析任务 — 2026-09-30
+
+### 任务范围
+
+对应 `计划书/详细步骤.md` 阶段五（5.1 ~ 5.6）：创建异步分析任务并立即返回 task_id、任务状态查询、后台异常写入 `task.error_message` 且服务不崩溃、占位分析流程、`tests/test_tasks.py`、commit。
+
+### 完成内容
+
+- [x] 5.1 `app/api/routes_tasks.py`：`POST /videos/{video_id}/analyze` —— 视频不存在 404 → `TaskRepository.create`（pending）→ **202 立即返回** `{"task_id", "video_id", "status": "pending"}` → 响应发出后由 FastAPI `BackgroundTasks` 在线程池中调用 `run_analysis_task(task.id, db.get_bind())` 执行
+- [x] 5.2 `GET /tasks/{task_id}` → `TaskDetailResponse`（task_id, video_id, status, created_at, started_at, finished_at, error_message）；不存在 404 `{"detail": "任务不存在：id=..."}`；新增 `app/schemas/task.py`
+- [x] 5.3 `app/services/task_service.py::run_analysis_task`：整体 try/except —— 任意异常先 `rollback`、记 ERROR 日志（含 traceback），再 `update_status(failed, error_message=str(exc))`；连失败状态都写不进去时只记日志；`finally` 关闭 Session。**任何异常都不向外抛出，服务不崩溃。**
+- [x] 5.4 占位分析 `placeholder_analyze(session, video)`：校验视频文件存在（缺失抛 `AnalysisError`）+ 生成占位 summary 写入 `AnalysisResult`；标注 `TODO(阶段九 9.4)` 替换为真实链路（音频提取 → 转写 → AI 分析）
+- [x] 5.5 `tests/test_tasks.py` 6 条：创建立即返回 pending、状态流转（pending→running→success）、文件缺失失败路径 + 服务存活、未预期异常（RuntimeError）只落库不上抛、视频 404、任务 404；并把阶段四的 `client` 隔离 fixture 从 `test_upload.py` 下沉到 `tests/conftest.py` 供两阶段共用
+- [x] 5.6 commit：`feat: add async analysis task`（见 git log）
+
+### 实现要点
+
+- **后台任务与请求同库、不同会话**：路由把 `db.get_bind()`（引擎）交给后台，后台用 `sessionmaker(bind=engine)` 新建独立 Session；测试经 `dependency_overrides[get_db]` 用临时库时，后台自动落在同一个临时库上 → 测试零污染（实测真实库 videos/tasks/results 全 0）。
+- 请求会话在提交后无未完成事务，SQLite 不会出现写锁互斥。
+- 后台执行器放在 `app/services/task_service.py`（Service 层），路由只负责创建任务与排队，符合分层约定。
+
+### 验证结果
+
+- `pytest` 全量：**25 passed**（19 旧 + 6 任务新），仅剩已知 starlette 弃用提示。
+- **真实环境探针** `tools/task_probe.py`（对真实 uvicorn 服务，12 项检查全 PASS，exit=0）：
+  - `POST /videos/{id}/analyze` **0.214s 返回 202 + pending**（证明是立即返回，非同步等待）；
+  - 轮询 `GET /tasks/{id}` 到 `success`，占位 `AnalysisResult.summary` 落库；
+  - 删除视频文件后再分析 → 观察到状态流转 `['pending', 'running', 'failed']`，`error_message="视频文件不存在：H:\...data\uploads\b4169fe3_probe.mp4"`；
+  - 失败后 `/health` 200、`GET /videos/{id}` 200（服务未崩溃）；不存在的视频/任务均 404；
+  - 探针自清理：真实库 `videos=0, tasks=0, results=0`，`data/uploads` 仅 `.gitkeep`；8000 端口干净释放。
+- 服务端日志确认 `app.services.task_service` 的"任务启动/任务完成/任务失败"日志与失败 traceback 正常输出。
+
+### 遇到的问题与观察
+
+1. **自查修掉一处笔误**：初版 `routes_tasks.py` 的 `_detail_response` 误留了一个 walrus 占位表达式（`task_video_id := task.video_id`），提交前自查发现，改回 `video_id=task.video_id`（未流入测试）。
+2. **TestClient 会等 BackgroundTasks 执行完才返回请求**：因此 HTTP 层测试看到的终态是 success/failed，无法直接观察中间态。解决：创建响应断言 `pending`；`running` 通过 monkeypatch `placeholder_analyze` 挂钩子，在后台线程的 Session 里读取分析开始那一刻的任务状态并断言。
+3. 探针中文输出在 GBK 控制台显示乱码（仅控制台显示问题，断言全过、exit=0）。
+
+### 个人确认
+
+（待用户实际运行确认后填写）
