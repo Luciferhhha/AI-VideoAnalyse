@@ -76,6 +76,27 @@
 - `healthy`：服务已运行时二次启动停留并提示=True、原服务仍正常=True
 - `pytest` 回归：`2 passed` ✅；测试后 8000 端口干净释放
 
+### 追加修复三（同日，用户反馈 start.bat 闪退）
+
+**现象**：`run.py` 双击已正常（浏览器 `/health` 返回 `{"status":"ok"}`），但双击 `start.bat` 的 cmd 窗口一闪而过。
+
+**定位**：
+1. 查 `logs/launcher.log`：用户 run.py 成功启动（21:50:30 `starting server`）之后**再无任何记录** → start.bat 里的 Python 从未被调用，问题在 bat 本身；
+2. 查字节：`start.bat` **CRLF=0、全部 bare LF（13 个）**，且为 UTF-8 中文 + 多行 `if/else` 块；
+3. 复现（`cmd /c start.bat` 抓输出）：
+   ```
+   '.venv\Scripts\python.exe" run.py' 不是内部或外部命令
+   '建虚拟环境：' 不是内部或外部命令
+   '止（出错信息在上方）?pause' 不是内部或外部命令
+   ```
+   cmd 解析崩坏：引号丢失、`pause` 被并入中文文本行 → 执行不到 `pause` 直接退出 → 闪退。
+
+**修改**：重写 `start.bat` —— 纯 ASCII 文案、`goto` 单行结构（不用多行括号块）、写入后强制转换 CRLF（验证 CRLF=16、bareLF=0、ASCII-only）。
+
+**再测试**（`cmd /c start.bat` + 输出捕获）：
+- bat 进程保持运行、8000 端口 LISTENING、`launcher.log` 增长、stderr 出现 `Uvicorn running on http://127.0.0.1:8000` ✅
+- `GET /health` → `{"status":"ok"}` ✅；测试后 taskkill 进程树，端口干净释放 ✅
+
 ### 个人确认
 
 （待用户实际运行确认后填写）
