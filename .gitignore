@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual environment
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Project data (runtime artifacts)
+data/uploads/*
+data/outputs/*
+data/database/*
+!data/uploads/.gitkeep
+!data/outputs/.gitkeep
+!data/database/.gitkeep
+
+# Environment secrets
+.env
