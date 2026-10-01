@@ -299,3 +299,45 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 阶段七：语音转文字 — 2026-10-01
+
+### 任务范围
+
+对应 `计划书/详细步骤.md` 阶段七（7.1 ~ 7.6）：统一接口 `TranscriptionService`（Whisper / API / Mock 可切换）、第一版 mimo API 音频输入方案输出 `{"text","segments"}`、超时/限流/重试与降级（失败时任务标记 failed 并记录原因）、Mock 实现、测试无 Key 全绿、commit。
+
+### 完成内容
+
+- [x] 7.1 `app/services/transcription_service.py`：抽象基类 `TranscriptionService` + 工厂 `get_transcription_service()`，按 `config.TRANSCRIPTION_PROVIDER` 在 `mimo`（默认）/ `mock` / `whisper` 间切换
+- [x] 7.2 `MimoTranscriptionService`：端点 `POST {MIMO_BASE_URL}/chat/completions`（OpenAI 兼容），`model=mimo-v2.5-asr`，音频以 data URL（`data:audio/wav;base64,…`）走 `messages[0].content[0].type=input_audio`，`Authorization: Bearer` 鉴权；输出契约 `{"text": str, "segments": [{"start","end","text"}]}`
+- [x] 7.3 健壮性：httpx 超时 60s；429/5xx/网络错误/超时 → 指数退避重试（`max_retries=2`，封顶 30s，带 `Retry-After` 优先）；401/400 等 4xx 确定性失败不重试；耗尽后抛 `TranscriptionError`（含原因）→ 任务链路落 `task.error_message` 并标记 failed
+- [x] 7.4 `MockTranscriptionService`：读 wav 时长生成确定性中文示例文本 + 单段，无 Key 可用；`WhisperTranscriptionService` 为预留接口（调用即报"第一版不启用"）
+- [x] 7.5 `tests/test_transcription.py` 20 条 + `tests/test_tasks.py` 新增 2 条链路集成，全部走 `httpx.MockTransport` / Mock 服务，无网络无 Key
+- [x] 7.6 commit：`feat: add transcription service`
+
+### 实现要点
+
+- **降级构造 segments**：官方 ASR 响应 `choices[0].message.content` 是纯字符串、不带时间戳 → 单段降级，时长优先级 wav 实际时长（stdlib `wave`）→ 响应 `usage.seconds` → `0.0`。
+- **配置集中在 `app/config.py`**：`TRANSCRIPTION_PROVIDER`（env 默认 `mimo`）、`MIMO_API_KEY`、`MIMO_BASE_URL`（默认官方 `https://api.xiaomimimo.com/v1`）、`MIMO_ASR_MODEL`（默认 `mimo-v2.5-asr`）；工厂每次调用读配置，测试可 monkeypatch。无 Key 时 `transcribe` 直接抛"未配置 MIMO_API_KEY"（框架先行，符合《初版建议》节奏）。
+- **占位链路升级**：`task_service.placeholder_analyze` 现为 校验文件 → `extract_audio`（阶段六）→ `get_transcription_service().transcribe`（阶段七）→ 占位 summary + 真实 `transcript` 落 `AnalysisResult`；AI 分析仍占位，留 `TODO(阶段九 9.4)`。
+- **测试隔离**：`tests/conftest.py` 的 `client` fixture 新增重定向 `config.OUTPUTS_DIR → tmp_path/outputs` 与 `TRANSCRIPTION_PROVIDER → "mock"`，测试全链路零污染、无 Key。
+- 探针：新增 `tools/transcription_probe.py`（`mock` / `no-key` 两种模式）；`tools/task_probe.py` 清理步骤补删 `data/outputs/{id}/`（链路接入提取后会留下输出目录）。
+
+### 验证结果
+
+- `pytest` 全量：**53 passed**（31 旧 + 20 转写 + 2 链路集成），仅剩已知 starlette 弃用提示。
+- **真实环境（mock 提供方）**：`task_probe.py` 12 项全 PASS（阶段五回归，无回归）；`transcription_probe.py mock` 9 项全 PASS —— 真实 ffmpeg 提取 `data/outputs/1/audio.wav`（64722 bytes）、任务 success、`AnalysisResult.transcript` = Mock 文本、占位 summary 落库。
+- **真实环境（默认 mimo、未配 Key）**：`transcription_probe.py no-key` 7 项全 PASS —— 状态流转 `['running','failed']`，`error_message = "未配置 MIMO_API_KEY（环境变量或 app/config.py），无法调用 mimo 转写 API。"`，失败后 `/health` 与视频查询仍 200。
+- 收尾核对：探针自清理后真实库 `videos=0, tasks=0, results=0`、`data/uploads` 与 `data/outputs` 仅 `.gitkeep`、8000 端口释放。
+
+### 遇到的问题与观察
+
+1. 测试字节串笔误：`b"\xff\xfxfake-mp3-bytes"` 的 `\xfx` 不是合法 hex 转义，pytest 收集阶段 SyntaxError → 改为 `b"ID3 fake mp3 bytes"`（语法错误优先在收集期暴露，属低级但易犯）。
+2. 官方 ASR 不返回时间戳（响应只有纯文本 content + `usage.seconds`）：计划契约却要求 segments —— 已在服务端按音频时长降级为单段，并在模块 docstring 写明该差异；若后续需要逐句时间戳，需换 Whisper 类接口或官方后续能力。
+3. 真实 API（mimo-v2.5-asr）联网转写尚未实测：当前环境无 `MIMO_API_KEY`，按《初版建议》框架先行；待用户填写 Key 后用真实音频回归一次。
+
+### 个人确认
+
+（待用户实际运行确认后填写）

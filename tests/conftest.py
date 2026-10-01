@@ -18,16 +18,19 @@ FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 @pytest.fixture()
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """隔离客户端：上传目录重定向到 tmp + 临时 SQLite 库（dependency_overrides）。
+    """隔离客户端：上传/输出目录重定向到 tmp + 临时 SQLite 库（dependency_overrides）。
 
-    阶段四（上传）、阶段五（异步任务）共用；后台任务经 `db.get_bind()` 拿到
-    同一个临时引擎，因此也不会污染真实 data/ 与 data/database。
+    阶段四（上传）、阶段五（异步任务）、阶段七（转写接入占位链路）共用；
+    后台任务经 `db.get_bind()` 拿到同一个临时引擎，因此也不会污染真实
+    data/ 与 data/database。转写默认走 mock（无需 API Key，7.5）。
     """
     from app import config
     from app.database.database import Base, create_db_engine, get_db
     from app.main import app
 
     monkeypatch.setattr(config, "UPLOADS_DIR", tmp_path / "uploads")
+    monkeypatch.setattr(config, "OUTPUTS_DIR", tmp_path / "outputs")
+    monkeypatch.setattr(config, "TRANSCRIPTION_PROVIDER", "mock")
     engine = create_db_engine(f"sqlite:///{tmp_path.as_posix()}/test_api.db")
     Base.metadata.create_all(engine)
     testing_session = sessionmaker(bind=engine, expire_on_commit=False)

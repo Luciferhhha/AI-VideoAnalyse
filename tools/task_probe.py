@@ -122,9 +122,12 @@ def main() -> int:
         )
         check("不存在的任务 → 404", client.get("/tasks/999999").status_code == 404)
 
-        # 7) 清理本次探针数据（级联删除任务与结果）
+        # 7) 清理本次探针数据（级联删除任务与结果 + 输出目录）
+        import shutil as _shutil
+
         with SessionLocal() as session:
             deleted = VideoRepository(session).delete(video_id)
+        _shutil.rmtree(ROOT / "data" / "outputs" / str(video_id), ignore_errors=True)
         leftover = list((ROOT / "data" / "uploads").glob("*_probe.mp4"))
         check(
             "清理探针数据（视频级联删除 + 文件删除）",

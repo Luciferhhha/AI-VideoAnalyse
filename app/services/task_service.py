@@ -7,8 +7,8 @@ pending → running → success / failed。
 
 约定：
 - 后台异常一律被捕获并写入 `task.error_message`，服务不得崩溃（5.3）。
-- 本阶段为占位分析流程（5.4）；阶段九 9.4 用真实链路
-  （音频提取 → 转写 → AI 分析）替换 `placeholder_analyze`。
+- 阶段七起占位链路已接入 音频提取（阶段六）→ 语音转写（阶段七）；
+  AI 分析仍为占位，TODO(阶段九 9.4) 用真实链路补齐。
 """
 
 from __future__ import annotations
@@ -21,6 +21,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.database.models import TaskStatus
 from app.database.repository import ResultRepository, TaskRepository, VideoRepository
+from app.services.audio_service import extract_audio
+from app.services.transcription_service import get_transcription_service
 
 logger = logging.getLogger(__name__)
 
@@ -30,17 +32,21 @@ class AnalysisError(Exception):
 
 
 def placeholder_analyze(_session: Session, video) -> dict[str, str | None]:
-    """占位分析流程：校验视频文件存在，生成占位结果。
+    """占位分析流程：校验视频 → 提取音轨 → 语音转写 → 生成占位结果。
 
-    TODO(阶段九 9.4)：替换为真实链路 音频提取 → 语音转写 → AI 分析。
+    转写失败（7.3）抛 `TranscriptionError`，由 `run_analysis_task` 落
+    `task.error_message` 并标记任务 failed。
+    TODO(阶段九 9.4)：补上真实 AI 分析（摘要/关键词/章节）。
     """
     if not Path(video.filepath).is_file():
         raise AnalysisError(f"视频文件不存在：{video.filepath}")
+    audio_path = extract_audio(video.filepath, video.id)
+    transcription = get_transcription_service().transcribe(audio_path)
     return {
-        "summary": f"[占位分析] {video.filename}（真实分析链路待阶段九接入）",
+        "summary": f"[占位分析] {video.filename}（AI 分析待阶段九接入）",
         "keywords": None,
         "chapters": None,
-        "transcript": None,
+        "transcript": transcription["text"],
     }
 
 
