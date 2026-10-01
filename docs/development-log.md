@@ -419,3 +419,47 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 阶段十：Video Analysis Agent + Tool — 2026-10-01
+
+### 任务范围
+
+对应 `计划书\详细步骤.md` 阶段十（10.1 ~ 10.8）：`app/agent/` 三个模块 —— 8 个 Tool、系统提示词与 Tool 描述、LLM→选 Tool→执行→回传→判断 的循环（`MAX_TOOL_CALLS = 10` 防无限调用）、`AgentState` 全程落日志、接入阶段五异步任务、`tests/test_agent.py`、commit。
+
+### 完成内容
+
+- [x] 10.1 `app/agent/tools.py`：8 个 Tool（get_video_info / extract_audio / transcribe_audio / extract_keyframes / generate_summary / generate_keywords / generate_chapters / save_result），每个明确输入 JSON Schema / 输出 / 异常（`ToolError`，中文可读）/ 可独立测试；`build_result_fields` 校验四步齐全。
+- [x] 10.2 `app/agent/prompts.py`：`AGENT_SYSTEM_PROMPT`（依赖顺序、每步只调一个工具、不编造、遇 `{"error":…}` 先读错误、全部完成后 save_result 并中文总结）+ `TOOL_DESCRIPTIONS` 8 条。
+- [x] 10.3 `app/agent/agent.py`：`run_agent` 循环 —— LLM 决策 → Tool 执行 → `{"role":"tool"}` 回传 → 直到最终 content；Tool 异常不外抛，记入 `state.errors` 后以 `{"error": …}` 回传继续。
+- [x] 10.4 `MAX_TOOL_CALLS = 10`：执行前检查，超限抛 `AgentError`（state 挂异常），`current_step="error"`。
+- [x] 10.5 `AgentState{video_id, task_id, current_step, tool_calls, intermediate_results, errors}`；关键节点全程 `logger`（启动/每次 tool+args/完成 tool_calls=N errors=N/超限/失败）。
+- [x] 10.6 接入阶段五：`run_analysis_task` → `analyze_video(task_id=…)`，`config.AGENT_DRIVER`（默认 `agent`，可切 `direct` 走阶段九直连链路）；Agent 的 save_result 已写 `AnalysisResult` → 任务收尾幂等跳过重复插入。
+- [x] 10.7 `tests/test_agent.py` 28 条：Tool 单测（依赖顺序、参数校验、save_result、build_result_fields）、MockLLM 全流程 8 步、超限（3 次上限/`MAX_TOOL_CALLS==10`）、工具失败回传继续、`MimoAgentLLM` MockTransport（无 Key / tool_calls 解析 / 最终 content / 429 Retry-After 重试 / 401 不重试 / 500 耗尽 3 次 / 非法参数 JSON / 空内容）、工厂三态。
+- [x] 10.8 commit：`feat: add video analysis agent with tool calling`（见 git log）。
+
+### 实现要点
+
+- **LLM 抽象**：`AgentLLM.decide(messages, tools) -> AgentDecision{tool_calls|content}`；`MimoAgentLLM`（mimo 原生 Tool Calling，官方 openai-api 文档，重试策略与转写/分析同源：429/5xx/超时/网络重试，Retry-After 优先封顶 30s，401/400 fail-fast，无 Key 报"未配置 MIMO_API_KEY…mimo Agent API。"）；`MockAgentLLM`（脚本化 Tool 序列，默认即完整 8 步链路，耗尽后返回中文最终答复）。
+- **配置**（`config.py`）：`AGENT_PROVIDER`（env 默认 `mimo`，测试切 `mock`）、`MIMO_AGENT_MODEL`（默认 `mimo-v2.6-flash`）、`AGENT_DRIVER`（env 默认 `agent` / `direct`）。
+- **save_result 语义**：无 `task_id` 上下文 → `ToolError`；`ResultRepository.create` 自行 commit（既有约定）；`run_analysis_task` 先 `get_by_task` 再插入，幂等。
+- **消息协议**：assistant 带 tool_calls 补全历史；每个 tool_call 一条 `role=tool` 结果（`json.dumps(ensure_ascii=False)`），OpenAI 兼容可回放给真实 API。
+
+### 验证结果
+
+- `pytest` 全量 **112 passed**（84 旧 + 28 Agent），仅剩已知 starlette 弃用提示。
+- **真实环境（三 provider 全 mock，AGENT_DRIVER=agent）**：`task_probe.py` 12/12 PASS；`transcription_probe.py mock` 9/9 PASS —— 服务日志确认 Agent 真实跑完 8 步（`Agent 启动 … max_tool_calls=10` → 每步 `tool=xxx args={}` → `Agent 完成 tool_calls=8 errors=0` → success）。
+- **真实环境（默认 mimo 无 Key）**：`transcription_probe.py no-key` 7/7 PASS —— `['running','failed']`，`error_message = "未配置 MIMO_API_KEY（环境变量或 app/config.py），无法调用 mimo Agent API。"`，失败后服务正常。
+- 收尾核对：真实库 `videos=0, tasks=0, results=0`，`data/uploads` 与 `data/outputs` 仅 `.gitkeep`，8000 端口释放；清理了一个 0 字节无表残留 `data/database/app.db`（历史误建）。
+
+### 遇到的问题与观察
+
+1. **`task_service.py` 漏 `from app import config`**：新增 `AGENT_DRIVER` 读取后首次跑测试 6 failed（`NameError: name 'config' is not defined`）—— 改 config 相关代码要同步检查 import。
+2. **两处断言按真实实现修正**：`get_video_info` 的 `filename` 取自 ffprobe（真实文件名 `sample.mp4`，非写库名）；Tool 描述不含工具名本身 → 断言改验语义（"最后一步"）。
+3. spy/boom 签名补 `task_id=None` 并转发（`analyze_video` 新增 kw-only 参数），否则调用点 TypeError。
+4. 真实 API 的 Tool Calling 联网实测待填 Key 后进行（用户要求初版完成后再配 Key）。
+
+### 个人确认
+
+（待用户实际运行确认后填写）

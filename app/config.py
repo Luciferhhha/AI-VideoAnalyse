@@ -40,6 +40,17 @@ ANALYSIS_PROVIDER = os.getenv("ANALYSIS_PROVIDER", "mimo")
 # 视觉模型：官方支持 mimo-v2.6-flash / mimo-v2.6-pro / mimo-v2.6-pro-ultraspeed / mimo-v2.5
 MIMO_ANALYSIS_MODEL = os.getenv("MIMO_ANALYSIS_MODEL", "mimo-v2.6-flash")
 
+# Video Analysis Agent（阶段十）：mimo / mock
+# - mimo：mimo 原生 Tool Calling（默认，需 MIMO_API_KEY）
+# - mock：脚本化 Tool 序列（测试用，无需 API Key）
+AGENT_PROVIDER = os.getenv("AGENT_PROVIDER", "mimo")
+MIMO_AGENT_MODEL = os.getenv("MIMO_AGENT_MODEL", "mimo-v2.6-flash")
+
+# 分析任务驱动方式（10.6）：agent / direct
+# - agent：Agent 循环驱动 8 个 Tool 完成分析（默认，项目核心链路）
+# - direct：阶段九的直连链路（保留作对照与降级）
+AGENT_DRIVER = os.getenv("AGENT_DRIVER", "agent")
+
 
 def ensure_dirs() -> None:
     """确保运行时目录存在。"""

@@ -32,6 +32,8 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(config, "OUTPUTS_DIR", tmp_path / "outputs")
     monkeypatch.setattr(config, "TRANSCRIPTION_PROVIDER", "mock")
     monkeypatch.setattr(config, "ANALYSIS_PROVIDER", "mock")
+    # 阶段十：任务走 Agent 驱动（config.AGENT_DRIVER 默认 agent），LLM 用脚本化 Mock
+    monkeypatch.setattr(config, "AGENT_PROVIDER", "mock")
     engine = create_db_engine(f"sqlite:///{tmp_path.as_posix()}/test_api.db")
     Base.metadata.create_all(engine)
     testing_session = sessionmaker(bind=engine, expire_on_commit=False)

@@ -47,11 +47,11 @@ def test_task_flows_pending_running_success(
     seen: list[str] = []
     real_analyze = task_service.analyze_video
 
-    def spy(session, video) -> dict:
+    def spy(session, video, task_id=None) -> dict:
         # 分析开始执行那一刻的任务状态（由后台线程自己的 Session 读取）
         task = TaskRepository(session).list_by_video(video.id)[0]
         seen.append(task.status)
-        return real_analyze(session, video)
+        return real_analyze(session, video, task_id=task_id)
 
     monkeypatch.setattr(task_service, "analyze_video", spy)
 
@@ -97,7 +97,7 @@ def test_unexpected_exception_marks_task_failed(
 ) -> None:
     video_id = _upload(client)
 
-    def boom(_session, _video):
+    def boom(_session, _video, task_id=None):
         raise RuntimeError("boom in analysis")
 
     monkeypatch.setattr(task_service, "analyze_video", boom)

@@ -20,6 +20,7 @@ from pathlib import Path
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from app import config
 from app.database.models import TaskStatus
 from app.database.repository import ResultRepository, TaskRepository, VideoRepository
 from app.services.analysis_service import (
@@ -38,16 +39,31 @@ class AnalysisError(Exception):
     """分析流程中可预期的失败（原因写入 task.error_message）。"""
 
 
-def analyze_video(_session: Session, video) -> dict[str, str | None]:
-    """完整分析链路（9.4）：校验视频 → 音频提取 → 语音转写 → 关键帧提取 →
-    AI 分析（摘要/关键词/章节）→ 返回 `AnalysisResult` 写库字段。
+def analyze_video(
+    _session: Session, video, *, task_id: int | None = None
+) -> dict[str, str | None]:
+    """完整分析链路（9.4）：校验视频 → 分析（10.6 两种驱动）→ 写库字段。
 
-    AI 分析失败（9.2 非法 JSON、未配置 API Key 等）抛
-    `AnalysisServiceError`，由 `run_analysis_task` 落
+    - `config.AGENT_DRIVER == "agent"`（默认）：由 Agent 循环驱动 8 个 Tool
+      完成分析；save_result Tool 直接写入 `AnalysisResult`。
+    - `config.AGENT_DRIVER == "direct"`：阶段九直连链路（对照/降级）。
+
+    失败（9.2 非法 JSON、未配置 API Key、Tool 失败、超限等）抛
+    `AnalysisError`/`AgentError`，由 `run_analysis_task` 落
     `task.error_message` 并标记任务 failed，程序不崩溃。
     """
     if not Path(video.filepath).is_file():
         raise AnalysisError(f"视频文件不存在：{video.filepath}")
+    driver = (config.AGENT_DRIVER or "agent").strip().lower()
+    if driver == "direct":
+        return _direct_analyze(video)
+    if driver == "agent":
+        return _agent_analyze(_session, video, task_id)
+    raise AnalysisError(f"未知的分析驱动方式：{config.AGENT_DRIVER}（可选 agent / direct）")
+
+
+def _direct_analyze(video) -> dict[str, str | None]:
+    """阶段九直连链路：音频提取 → 语音转写 → 关键帧提取 → AI 分析。"""
     audio_path = extract_audio(video.filepath, video.id)
     transcript = get_transcription_service().transcribe(audio_path)["text"]
     keyframe_paths = [
@@ -66,6 +82,26 @@ def analyze_video(_session: Session, video) -> dict[str, str | None]:
         "chapters": json.dumps(chapters, ensure_ascii=False),
         "transcript": transcript,
     }
+
+
+def _agent_analyze(
+    session: Session, video, task_id: int | None
+) -> dict[str, str | None]:
+    """阶段十（10.6）：Agent 驱动分析 —— LLM 循环调用 8 个 Tool 完成链路。
+
+    - save_result Tool 已写入 `AnalysisResult`（run_analysis_task 幂等跳过重复写）。
+    - Agent 任一 Tool 失败（state.errors 非空）即任务失败并记录首个原因。
+    """
+    from app.agent.agent import AgentContext, run_agent
+    from app.agent.tools import ToolError, build_result_fields
+
+    state = run_agent(AgentContext(video=video, session=session, task_id=task_id))
+    if state.errors:
+        raise AnalysisError(f"Agent 分析失败：{state.errors[0]}")
+    try:
+        return build_result_fields(state)
+    except ToolError as exc:
+        raise AnalysisError(str(exc)) from exc
 
 
 def run_analysis_task(task_id: int, engine: Engine) -> None:
@@ -87,8 +123,11 @@ def run_analysis_task(task_id: int, engine: Engine) -> None:
         if video is None:
             raise AnalysisError(f"关联视频不存在：id={task.video_id}")
 
-        result = analyze_video(session, video)
-        ResultRepository(session).create(task_id, **result)
+        # task_id 传给 analyze_video：Agent 驱动下 save_result Tool 需要它
+        result = analyze_video(session, video, task_id=task_id)
+        # Agent 驱动下 save_result Tool 已写入结果 → 幂等跳过，避免重复插入
+        if ResultRepository(session).get_by_task(task_id) is None:
+            ResultRepository(session).create(task_id, **result)
 
         tasks.update_status(task_id, TaskStatus.SUCCESS)
         logger.info("任务完成 task_id=%s status=success", task_id)
