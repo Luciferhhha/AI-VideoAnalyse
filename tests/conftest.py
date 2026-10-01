@@ -47,6 +47,29 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(scope="session")
+def no_audio_video() -> Path:
+    """生成（或复用）无音频视频：2 秒，320x240，10fps，仅视频流（阶段六用）。"""
+    FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
+    out = FIXTURES_DIR / "no_audio.mp4"
+    if out.exists():
+        return out
+    ffmpeg = shutil.which("ffmpeg")
+    assert ffmpeg, "需要 PATH 中的 ffmpeg 来生成测试视频"
+    cmd = [
+        ffmpeg, "-y",
+        "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=10",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        str(out),
+    ]
+    kwargs = {"capture_output": True, "text": True, "encoding": "utf-8", "errors": "replace"}
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    result = subprocess.run(cmd, **kwargs)
+    assert result.returncode == 0, f"生成无音频测试视频失败: {result.stderr[-500:]}"
+    return out
+
+
+@pytest.fixture(scope="session")
 def sample_video() -> Path:
     """生成（或复用）最小测试视频：2 秒，320x240，10fps，h264+aac。"""
     FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
@@ -64,7 +87,7 @@ def sample_video() -> Path:
         "-shortest",
         str(out),
     ]
-    kwargs = {"capture_output": True, "text": True}
+    kwargs = {"capture_output": True, "text": True, "encoding": "utf-8", "errors": "replace"}
     if hasattr(subprocess, "CREATE_NO_WINDOW"):
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
     result = subprocess.run(cmd, **kwargs)

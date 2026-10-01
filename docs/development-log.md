@@ -263,3 +263,39 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 阶段六：音频提取 — 2026-09-30
+
+### 任务范围
+
+对应 `计划书/详细步骤.md` 阶段六（6.1 ~ 6.4）：`extract_audio` 用 FFmpeg 提取 wav、自动命名输出到 `data/outputs/{video_id}/` 避免冲突、异常处理 + logging、测试、commit。
+
+### 完成内容
+
+- [x] 6.1 `app/services/audio_service.py`：`extract_audio(video_path, video_id, *, output_root=None) -> Path` —— FFmpeg 提取音轨为 **16kHz 单声道 PCM s16le wav**（阶段七 mimo 语音转文字的输入规格）
+- [x] 6.2 输出 `{output_root}/{video_id}/audio.wav`（缺省 `config.OUTPUTS_DIR` 即 `data/outputs/{video_id}/`）；同名冲突自动编号 `audio_1.wav`… 不覆盖；`video_id` 做路径穿越校验；成功记 INFO、ffmpeg 失败记 WARNING 并抛异常；超时 = 60s + 2×时长；失败/超时清理半成品 wav
+- [x] 6.3 `tests/test_audio.py` 6 条 + conftest 新增 `no_audio_video` session fixture（仅 testsrc 视频流）：正常提取（`wave` 校验 1ch/16kHz/16bit/≈2s）、冲突编号、无音频流（`NoAudioStreamError` 且不留残留目录）、文件不存在（`VideoNotFoundError`）、ffmpeg 缺失（`FFmpegNotFoundError`）、ffmpeg 失败（`AudioExtractionError` + 半成品清理）
+- [x] 6.4 commit：`feat: add audio extraction`（`a196edb`，3 files, 274 insertions）
+
+### 实现要点
+
+- **复用阶段二校验**：先 `get_video_info`（存在性 → 有效视频 → 音轨探测），复用其 `VideoNotFoundError` / `InvalidVideoError` / `FFmpegNotFoundError` 异常语义（与全局异常处理器一致）；本阶段只新增 `NoAudioStreamError`（无音轨）与 `AudioExtractionError`（提取失败/超时/空输出），基类 `AudioServiceError`。
+- 签名比计划书 `extract_audio(video_path)` 多一个 `video_id`：6.2 要求输出到 `data/outputs/{video_id}/`，目录由 video_id 决定，必须显式传入；另加关键字参数 `output_root` 供测试重定向到 `tmp_path`，测试零污染真实 `data/`。
+- 定位 ffmpeg 与阶段二定位 ffprobe 同构（`config.FFMPEG_DIR` → PATH），且运行时读 `config.FFMPEG_DIR` 动态属性，便于测试 monkeypatch。
+
+### 验证结果
+
+- `pytest` 全量：**31 passed**（25 旧 + 6 新），仅剩已知 starlette 弃用提示。
+- **真实路径实测**（真实 `config.OUTPUTS_DIR`）：提取生成 `data/outputs/999/audio.wav`（64722 bytes）；再次提取生成 `audio_1.wav`（冲突编号生效，目录内 `['audio.wav', 'audio_1.wav']`）；相对布局 `999\audio_1.wav` 正确；清理后 `data/outputs` 仅剩 `.gitkeep`。
+- fixture 真实重建：删除 `tests/fixtures/*.mp4` 后全量重跑仍 31 passed（`sample.mp4`、`no_audio.mp4` 均现场生成）。
+
+### 遇到的问题与观察
+
+1. **GBK 解码警告（新测试暴露的真实缺陷）**：新增 `no_audio_video` fixture 首次生成视频时，pytest 报 `PytestUnhandledThreadExceptionWarning`，reader 线程 `UnicodeDecodeError: 'gbk' codec can't decode byte 0xa2 in position 3625` —— conftest 两个 fixture 的 `subprocess.run(text=True)` 未设 `encoding`，Windows 默认用 GBK 解码 ffmpeg stderr（含中文路径）崩溃。此前 `sample.mp4` 已存在、fixture 提前返回，故一直未触发。修复：两处 fixture 统一 `encoding="utf-8", errors="replace"`；删除两个 fixture mp4 重新生成验证，警告消失、31 passed。
+2. 教训：中文 Windows 上 `text=True` 的 subprocess 必须显式 `encoding="utf-8", errors="replace"`，否则"读取错误信息"这个动作本身会先崩溃（应用代码 `video_service`/`audio_service` 一直正确，只有测试 fixture 漏设）。
+
+### 个人确认
+
+（待用户实际运行确认后填写）
