@@ -613,3 +613,33 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 增量：结果查询接口 `GET /tasks/{id}/result` — 2026-10-01
+
+### 任务范围
+
+用户首次真实试用（上传视频后）发现"看不到分析结果"：诊断出两个原因 —— ① 只调了上传、未调 `/analyze`（无任务即无结果）；② 项目无结果查询端点（README 已知问题第 1 条），结果只能直接翻 `analysis_results` 表。经用户确认，增量补结果接口。
+
+### 完成内容
+
+- `app/schemas/task.py`：新增 `TaskResultResponse{task_id, video_id, status, summary, keywords: list[str], chapters: list[dict], transcript, finished_at}`。
+- `app/api/routes_tasks.py`：新增 `GET /tasks/{task_id}/result`；`_loads()` 把库中 JSON 字符串在响应层还原（解析失败按空值兜底，不让响应崩）。状态语义：任务不存在 404 / 非 success（pending、running、failed）409 且 detail 带 status 与失败原因 / 成功但结果行缺失 404。读取走 `TaskRepository`/`ResultRepository`，路由不写 SQL。
+- `tests/test_tasks.py`：新增 4 条 —— 成功结果结构对比 `MOCK_*` 常量、pending→409、failed→409 含原因、任务 999→404。
+- 文档同步：README 第 16 节已知问题与第 17 节后续计划改写；`docs/api.md` 新增第 6 节（响应示例 + 状态码表），总览表加行，原第 6/7 节顺延为 7/8。
+
+### 验证结果
+
+- 全量 pytest **119 passed, 1 warning**（115 旧 + 4 新）。
+- 真实库验证：`GET /tasks/1/result` → 200，返回该视频真实 mimo 结果（summary/keywords 8 个/chapters 3 章/transcript 106 字）；`/tasks/99/result` → 404。
+- 真实服务 HTTP 验证（临时后台服务）：200 结构化 JSON 正常；`task_probe` 回归 12/12 PASS exit=0；随后停服务回收 8000 端口。
+
+### 遇到的问题与观察
+
+1. 用户触发真实链路时任务耗时 70s 且 transcript 为真实歌词 —— 说明本机已配好 `MIMO_API_KEY`，真实 API 回归实际已跑通（阶段十四遗留的"待填 Key 回归"在转写+分析链路上被自然验证）。
+2. 控制台打印结果仍为 GBK 显示乱码（已知问题，数据本体 UTF-8，`-X utf8` 读文件可正常显示）。
+
+### 个人确认
+
+（待用户实际运行确认后填写）

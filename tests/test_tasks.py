@@ -189,3 +189,77 @@ def test_get_missing_task_returns_404(client: TestClient) -> None:
     resp = client.get("/tasks/999")
     assert resp.status_code == 404
     assert "999" in resp.json()["detail"]
+
+
+def test_get_result_returns_structured_payload(client: TestClient) -> None:
+    """结果接口：JSON 字符串还原为结构化 keywords/chapters。"""
+    from app.services.analysis_service import MockAnalysisLLM
+
+    video_id = _upload(client)
+    task_id = client.post(f"/videos/{video_id}/analyze").json()["task_id"]
+
+    resp = client.get(f"/tasks/{task_id}/result")
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert set(body) == {
+        "task_id",
+        "video_id",
+        "status",
+        "summary",
+        "keywords",
+        "chapters",
+        "transcript",
+        "finished_at",
+    }
+    assert body["status"] == "success"
+    assert body["summary"] == MockAnalysisLLM.MOCK_SUMMARY
+    assert body["keywords"] == MockAnalysisLLM.MOCK_KEYWORDS  # list[str]
+    assert body["chapters"] == MockAnalysisLLM.MOCK_CHAPTERS  # list[dict]
+    assert body["transcript"] == MockTranscriptionService.MOCK_TEXT
+    assert body["finished_at"] is not None
+
+
+def test_get_result_pending_returns_409(client: TestClient) -> None:
+    """TestClient 在请求返回前跑完后台任务，故直接造一个 pending 任务。"""
+    from app.database.database import get_db
+    from app.main import app as fastapi_app
+
+    video_id = _upload(client)
+    gen = fastapi_app.dependency_overrides[get_db]()
+    session = next(gen)
+    try:
+        task_id = TaskRepository(session).create(video_id).id
+    finally:
+        gen.close()
+
+    resp = client.get(f"/tasks/{task_id}/result")
+
+    assert resp.status_code == 409, resp.text
+    assert "pending" in resp.json()["detail"]
+
+
+def test_get_result_failed_returns_409_with_reason(
+    client: TestClient, monkeypatch
+) -> None:
+    """失败任务查结果：409 且 detail 带失败原因（无结果可查）。"""
+
+    def boom(_session, _video, task_id=None):
+        raise RuntimeError("boom in analysis")
+
+    monkeypatch.setattr(task_service, "analyze_video", boom)
+    video_id = _upload(client)
+    task_id = client.post(f"/videos/{video_id}/analyze").json()["task_id"]
+
+    resp = client.get(f"/tasks/{task_id}/result")
+
+    assert resp.status_code == 409, resp.text
+    detail = resp.json()["detail"]
+    assert "failed" in detail
+    assert "boom in analysis" in detail
+
+
+def test_get_result_missing_task_returns_404(client: TestClient) -> None:
+    resp = client.get("/tasks/999/result")
+    assert resp.status_code == 404
+    assert "999" in resp.json()["detail"]

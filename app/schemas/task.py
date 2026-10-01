@@ -23,3 +23,16 @@ class TaskDetailResponse(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     error_message: str | None = None
+
+
+class TaskResultResponse(BaseModel):
+    """GET /tasks/{task_id}/result 响应：分析产物（库中 JSON 字符串在此还原为结构）。"""
+
+    task_id: int
+    video_id: int
+    status: str
+    summary: str | None = None
+    keywords: list[str] = []
+    chapters: list[dict] = []
+    transcript: str | None = None
+    finished_at: datetime | None = None

@@ -143,7 +143,7 @@ curl http://127.0.0.1:8000/tasks/1                                    # 200 轮�
 
 ## 16. 已知问题
 
-- 任务详情接口只返回状态，分析结果当前保存在 `analysis_results` 表（尚无结果查询端点）；
+- 任务详情接口只返回状态；分析产物用 `GET /tasks/{id}/result` 查询（成功任务返回摘要/关键词/章节/转写，未完成或失败为 409）；
 - 唯一 warning：starlette `TestClient`+httpx 弃用提示（第三方，升级跟踪）；
 - `tests/test_api.py` 自带一个非隔离 `client` fixture（lifespan 用真实库），与 conftest 隔离 fixture 同名不同行为；
 - 中文 Windows 控制台日志为 GBK 显示乱码（仅显示问题，写入与逻辑均为 UTF-8）；
@@ -153,6 +153,6 @@ curl http://127.0.0.1:8000/tasks/1                                    # 200 轮�
 ## 17. 后续计划
 
 - 填写 `MIMO_API_KEY` 后对转写/分析/Agent 三链路做真实 API 回归；
-- 增加分析结果查询端点（如 `GET /tasks/{id}/result`）与列表接口；
+- 分析结果列表接口（按视频列出历史任务结果）；
 - 计划书阶段十五（另行启动）：整理 12 项交付物、简历描述、GitHub 开源；
 - 本地 Whisper 提供方落地（接口已预留）、多任务并发与限流优化。

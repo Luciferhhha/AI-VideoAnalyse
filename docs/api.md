@@ -103,7 +103,34 @@ curl -X POST http://127.0.0.1:8000/videos/1/analyze
 curl http://127.0.0.1:8000/tasks/1
 ```
 
-## 6. 端点总览与状态码速查
+## 6. GET /tasks/{task_id}/result — 查询分析结果
+
+成功 `200`（`TaskResultResponse`），`keywords`/`chapters` 已从库中 JSON 字符串还原为结构：
+
+```json
+{
+  "task_id": 1,
+  "video_id": 1,
+  "status": "success",
+  "summary": "这段内容先是朗读了一段充满古风意境的歌词…",
+  "keywords": ["人间情", "姑娘", "琵琶"],
+  "chapters": [{"start": "00:00", "title": "情感叙事开篇", "summary": "…"}],
+  "transcript": "人间情悠扬，姑娘把谁记心上…",
+  "finished_at": "2026-10-01T14:36:15"
+}
+```
+
+| 状态码 | 场景 |
+|---|---|
+| 200 | 任务成功且结果已落库 |
+| 404 | 任务不存在 / 成功但结果行缺失（数据异常） |
+| 409 | 任务未完成或失败，`detail` 含 `status=…` 与失败原因（如 `错误：视频文件不存在…`） |
+
+```bash
+curl http://127.0.0.1:8000/tasks/1/result
+```
+
+## 7. 端点总览与状态码速查
 
 | 方法 | 路径 | 成功 | 说明 |
 |---|---|---|---|
@@ -112,19 +139,20 @@ curl http://127.0.0.1:8000/tasks/1
 | GET | `/videos/{id}` | 200 | 视频详情 |
 | POST | `/videos/{id}/analyze` | 202 | 创建分析任务（异步） |
 | GET | `/tasks/{id}` | 200 | 任务详情与状态 |
+| GET | `/tasks/{id}/result` | 200 | 分析结果（成功任务；未完成/失败 409） |
 
-常见错误码：`400` 非法内容 / `404` 资源不存在 / `413` 文件过大 / `422` 参数校验失败 / `500` 服务端依赖缺失。
+常见错误码：`400` 非法内容 / `404` 资源不存在 / `409` 状态冲突 / `413` 文件过大 / `422` 参数校验失败 / `500` 服务端依赖缺失。
 `VideoServiceError` 由全局 handler 统一翻译（`VideoNotFoundError→404`、`InvalidVideoError→400`、其他→500，见 `app/main.py`）。
 
-## 7. 分析结果字段（GET /tasks/{id} 背后的数据）
+## 8. 分析结果字段（存储层）
 
-结果经 `ResultRepository.get_by_task(task_id)` 落库于 `analysis_results`：
+结果经 `ResultRepository.get_by_task(task_id)` 落库于 `analysis_results`，由 `GET /tasks/{id}/result` 返回：
 
 | 列 | 内容 |
 |---|---|
 | `summary` | AI 摘要文本 |
-| `keywords` | JSON 字符串数组，如 `["测试","视频分析"]` |
+| `keywords` | JSON 字符串数组，如 `["测试","视频分析"]`（接口层解析为数组） |
 | `chapters` | JSON 数组 `[{"start":"00:00","title":"…","summary":"…"}]`（阶段九 9.3 契约） |
 | `transcript` | 语音转写全文 |
 
-> 说明：当前版本任务详情接口只返回任务状态；结果数据保存在数据库中，供 Agent 的 `save_result` Tool 写入。
+> 说明：结果由 Agent 的 `save_result` Tool 经 `ResultRepository` 写入；路由层不直接写 SQL。
