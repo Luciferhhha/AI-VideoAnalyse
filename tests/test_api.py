@@ -35,3 +35,18 @@ def test_lifespan_creates_database_tables(client: TestClient) -> None:
 
     tables = set(inspect(engine).get_table_names())
     assert {"videos", "analysis_tasks", "analysis_results"} <= tables
+
+
+# ------------------------------------------------------- 非法输入（阶段十一 11.1）
+
+
+def test_analyze_non_integer_video_id_returns_422(client: TestClient) -> None:
+    assert client.post("/videos/abc/analyze").status_code == 422
+
+
+def test_get_task_non_integer_id_returns_422(client: TestClient) -> None:
+    assert client.get("/tasks/abc").status_code == 422
+
+
+def test_upload_without_file_returns_422(client: TestClient) -> None:
+    assert client.post("/videos").status_code == 422

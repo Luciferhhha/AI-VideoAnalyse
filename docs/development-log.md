@@ -463,3 +463,37 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 阶段十一：自动化测试体系 — 2026-10-01
+
+### 任务范围
+
+对应 `计划书\详细步骤.md` 阶段十一（11.1 ~ 11.4）：补齐 10 类测试、无 API Key 全套可跑、一次全量 pytest 结果记录到 `docs/test-report.md`、commit。
+
+### 完成内容
+
+- [x] 11.1 十类测试审计并补缺口：原 112 条已覆盖 9 类，「非法输入」在 API 层补 3 条（非整型 video_id/task_id → 422、缺文件上传 → 422，`tests/test_api.py`），共 **115** 条。
+- [x] 11.2 无 API Key 环境验证：显式清空 `MIMO_API_KEY` 与全部 `*_PROVIDER`/`AGENT_DRIVER` 环境变量后全量运行通过（fixture 内 provider 切 mock；工厂默认 mimo 的失败路径也有专门测试断言）。
+- [x] 11.3 全量结果记录到 `docs/test-report.md`：环境/依赖版本、`115 passed, 1 warning in 17.14s`、按文件分布表、十类覆盖对照表、复现命令。
+- [x] 11.4 commit：`test: complete pytest suite`（见 git log）。
+
+### 实现要点
+
+- 报告数据全部来自真实运行输出（`pytest -q --durations=5` 与 `--collect-only` 分组统计），不手工估数。
+- 覆盖对照表把 10 类逐条映射到具体文件与测试名，缺口一目了然。
+
+### 验证结果
+
+- 无 Key 全量：**115 passed, 1 warning in 17.14s**；warning 仅为已知 starlette `testclient` 弃用提示。
+- 按文件：agent 28 / analysis 22 / transcription 20 / tasks 9 / keyframes 8 / database 7 / api 6 / audio 6 / upload 5 / video 4。
+
+### 遇到的问题与观察
+
+1. 十类清单里「非法输入」原本散落在 upload/keyframe 各文件，API 层（路径参数类型）没有专门测试 —— 补 3 条 422 后才敢标 ✅。
+2. `test_api.py` 自带一个非隔离的 `client` fixture（lifespan 建表用真实库），与 conftest 隔离 fixture 同名不同行为 —— 阶段十二/十三写文档时需说明。
+
+### 个人确认
+
+（待用户实际运行确认后填写）
