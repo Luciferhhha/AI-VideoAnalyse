@@ -45,22 +45,22 @@ def test_task_flows_pending_running_success(
 ) -> None:
     video_id = _upload(client)
     seen: list[str] = []
-    real_placeholder = task_service.placeholder_analyze
+    real_analyze = task_service.analyze_video
 
     def spy(session, video) -> dict:
         # 分析开始执行那一刻的任务状态（由后台线程自己的 Session 读取）
         task = TaskRepository(session).list_by_video(video.id)[0]
         seen.append(task.status)
-        return real_placeholder(session, video)
+        return real_analyze(session, video)
 
-    monkeypatch.setattr(task_service, "placeholder_analyze", spy)
+    monkeypatch.setattr(task_service, "analyze_video", spy)
 
     task_id = client.post(f"/videos/{video_id}/analyze").json()["task_id"]
 
     resp = client.get(f"/tasks/{task_id}")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert seen == ["running"], "占位分析执行时任务应已进入 running"
+    assert seen == ["running"], "分析执行时任务应已进入 running"
     assert body["status"] == "success"
     assert body["error_message"] is None
     assert body["created_at"] is not None
@@ -100,7 +100,7 @@ def test_unexpected_exception_marks_task_failed(
     def boom(_session, _video):
         raise RuntimeError("boom in analysis")
 
-    monkeypatch.setattr(task_service, "placeholder_analyze", boom)
+    monkeypatch.setattr(task_service, "analyze_video", boom)
 
     task_id = client.post(f"/videos/{video_id}/analyze").json()["task_id"]
     body = client.get(f"/tasks/{task_id}").json()
@@ -111,9 +111,12 @@ def test_unexpected_exception_marks_task_failed(
 
 
 def test_transcript_recorded_in_result(client: TestClient) -> None:
-    """阶段七：占位链路已接入转写，AnalysisResult.transcript 落库（mock）。"""
+    """阶段九 9.4：完整链路（音频→转写→关键帧→分析）落库，mock 全程。"""
+    import json
+
     from app.database.database import get_db
     from app.main import app as fastapi_app
+    from app.services.analysis_service import MockAnalysisLLM
 
     video_id = _upload(client)
     task_id = client.post(f"/videos/{video_id}/analyze").json()["task_id"]
@@ -126,9 +129,33 @@ def test_transcript_recorded_in_result(client: TestClient) -> None:
         result = ResultRepository(session).get_by_task(task_id)
         assert result is not None
         assert result.transcript == MockTranscriptionService.MOCK_TEXT
-        assert bool(result.summary)
+        # 9.1/9.3：摘要、关键词、章节均来自 MockLLM 固定 JSON
+        assert result.summary == MockAnalysisLLM.MOCK_SUMMARY
+        assert json.loads(result.keywords or "[]") == MockAnalysisLLM.MOCK_KEYWORDS
+        chapters = json.loads(result.chapters or "[]")
+        assert chapters == MockAnalysisLLM.MOCK_CHAPTERS
+        assert set(chapters[0]) == {"start", "title", "summary"}
     finally:
         gen.close()
+
+
+def test_analysis_failure_marks_task_failed_with_reason(
+    client: TestClient, monkeypatch
+) -> None:
+    """9.2：AI 分析失败（未配置 Key）→ 任务 failed 且记录原因，服务不崩溃。"""
+    from app import config
+
+    video_id = _upload(client)
+    monkeypatch.setattr(config, "ANALYSIS_PROVIDER", "mimo")
+    monkeypatch.setattr(config, "MIMO_API_KEY", "")  # 模拟未填写 API Key
+
+    task_id = client.post(f"/videos/{video_id}/analyze").json()["task_id"]
+    body = client.get(f"/tasks/{task_id}").json()
+
+    assert body["status"] == "failed"
+    assert "MIMO_API_KEY" in (body["error_message"] or "")
+    assert client.get("/health").status_code == 200
+    assert client.get(f"/videos/{video_id}").status_code == 200
 
 
 def test_transcription_failure_marks_task_failed_with_reason(

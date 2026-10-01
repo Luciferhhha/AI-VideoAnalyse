@@ -7,12 +7,13 @@ pending → running → success / failed。
 
 约定：
 - 后台异常一律被捕获并写入 `task.error_message`，服务不得崩溃（5.3）。
-- 阶段七起占位链路已接入 音频提取（阶段六）→ 语音转写（阶段七）；
-  AI 分析仍为占位，TODO(阶段九 9.4) 用真实链路补齐。
+- 阶段九起为完整链路（9.4）：音频提取（六）→ 语音转写（七）→ 关键帧
+  提取（八）→ AI 分析（九）→ 写入 `AnalysisResult`。
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -21,7 +22,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.database.models import TaskStatus
 from app.database.repository import ResultRepository, TaskRepository, VideoRepository
+from app.services.analysis_service import (
+    generate_chapters,
+    generate_keywords,
+    generate_summary,
+)
 from app.services.audio_service import extract_audio
+from app.services.keyframe_service import extract_keyframes
 from app.services.transcription_service import get_transcription_service
 
 logger = logging.getLogger(__name__)
@@ -31,22 +38,33 @@ class AnalysisError(Exception):
     """分析流程中可预期的失败（原因写入 task.error_message）。"""
 
 
-def placeholder_analyze(_session: Session, video) -> dict[str, str | None]:
-    """占位分析流程：校验视频 → 提取音轨 → 语音转写 → 生成占位结果。
+def analyze_video(_session: Session, video) -> dict[str, str | None]:
+    """完整分析链路（9.4）：校验视频 → 音频提取 → 语音转写 → 关键帧提取 →
+    AI 分析（摘要/关键词/章节）→ 返回 `AnalysisResult` 写库字段。
 
-    转写失败（7.3）抛 `TranscriptionError`，由 `run_analysis_task` 落
-    `task.error_message` 并标记任务 failed。
-    TODO(阶段九 9.4)：补上真实 AI 分析（摘要/关键词/章节）。
+    AI 分析失败（9.2 非法 JSON、未配置 API Key 等）抛
+    `AnalysisServiceError`，由 `run_analysis_task` 落
+    `task.error_message` 并标记任务 failed，程序不崩溃。
     """
     if not Path(video.filepath).is_file():
         raise AnalysisError(f"视频文件不存在：{video.filepath}")
     audio_path = extract_audio(video.filepath, video.id)
-    transcription = get_transcription_service().transcribe(audio_path)
+    transcript = get_transcription_service().transcribe(audio_path)["text"]
+    keyframe_paths = [
+        rec["filepath"]
+        for rec in extract_keyframes(video.filepath, video.id)
+    ]
+    summary = generate_summary(transcript, keyframes=keyframe_paths)
+    keywords = generate_keywords(transcript, keyframes=keyframe_paths)
+    chapters = generate_chapters(
+        transcript, duration=video.duration, keyframes=keyframe_paths
+    )
     return {
-        "summary": f"[占位分析] {video.filename}（AI 分析待阶段九接入）",
-        "keywords": None,
-        "chapters": None,
-        "transcript": transcription["text"],
+        "summary": summary,
+        # Text 列存 JSON 字符串（关键词数组 / 9.3 章节格式）
+        "keywords": json.dumps(keywords, ensure_ascii=False),
+        "chapters": json.dumps(chapters, ensure_ascii=False),
+        "transcript": transcript,
     }
 
 
@@ -69,7 +87,7 @@ def run_analysis_task(task_id: int, engine: Engine) -> None:
         if video is None:
             raise AnalysisError(f"关联视频不存在：id={task.video_id}")
 
-        result = placeholder_analyze(session, video)
+        result = analyze_video(session, video)
         ResultRepository(session).create(task_id, **result)
 
         tasks.update_status(task_id, TaskStatus.SUCCESS)

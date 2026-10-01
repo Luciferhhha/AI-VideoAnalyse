@@ -377,3 +377,45 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 阶段九：AI 内容分析 — 2026-10-01
+
+### 任务范围
+
+对应 `计划书/详细步骤.md` 阶段九（9.1 ~ 9.7）：`analysis_service.py` 的三个生成函数（mimo API 文本 + 关键帧图像输入）、LLM 结构化 JSON 的 Pydantic 校验与非法 JSON 修复、章节格式、把阶段五占位替换为完整链路、MockLLM 测试无 Key 可跑、里程碑提醒配置 API Key、commit。
+
+### 完成内容
+
+- [x] 9.1 `app/services/analysis_service.py`：`generate_summary` / `generate_keywords` / `generate_chapters`，第一版调用 mimo API（OpenAI Chat Completion 兼容，输入为转写文本 + 关键帧 `image_url` data URL，依官方图像理解文档）。
+- [x] 9.2 LLM 返回结构化 JSON → Pydantic 校验（`app/schemas/analysis.py`）；非法 JSON 修复链：去代码围栏 → 括号配平截取（截断按未闭合层级补 `]`/`}`）→ 去尾逗号 → 仍失败抛 `AnalysisServiceError` → 任务 failed 落 `error_message`，程序不崩溃。
+- [x] 9.3 章节格式 `[{"start":"00:00","title","summary"}]`，`start` 用正则 `^\d{1,3}:\d{2}(:\d{2})?$` 校验。
+- [x] 9.4 `task_service.placeholder_analyze` → `analyze_video`：文件校验 → `extract_audio`（六）→ `transcribe`（七）→ `extract_keyframes`（八）→ 三个生成函数（九）→ keywords/chapters 以 JSON 字符串写入 `AnalysisResult`。
+- [x] 9.5 测试全部走 MockLLM（固定 JSON），无 API Key 全绿；`client` fixture 新增 `ANALYSIS_PROVIDER → "mock"`。
+- [x] 9.6 里程碑：总体框架完成 → 已在交付消息中提醒用户填写分析 API Key/接口配置。
+- [x] 9.7 commit：`feat: add AI content analysis`（见 git log）
+
+### 实现要点
+
+- **LLM 抽象**：`AnalysisLLM.complete(messages) → str`；`MimoAnalysisLLM`（重试策略与转写同源：429/5xx/超时/网络错误重试，Retry-After 优先、封顶 30s，401/400 fail-fast；无 Key 报"未配置 MIMO_API_KEY…"）与 `MockAnalysisLLM`（按 system 里 `TASK=summary|keywords|chapters` 标记返回固定 JSON）；工厂 `get_analysis_llm()` 每次读 `config.ANALYSIS_PROVIDER` 切换。
+- **配置**：`config.py` 新增 `ANALYSIS_PROVIDER`（env 默认 `mimo`）与 `MIMO_ANALYSIS_MODEL`（默认 `mimo-v2.6-flash`，官方视觉模型）。
+- **成本权衡**：`select_keyframes` 均匀取帧上限 8（`_MAX_KEYFRAMES_IN_PROMPT=8`），避免长视频 120 帧爆 token；三次独立 LLM 调用对应计划书三个函数（非合并单次）。
+- **消息构造**：system 含 TASK 标记 + "只返回一个 JSON 对象"；user content 关键帧图像在前、任务文本在后（官方图像理解文档格式）；章节任务附"视频总时长（秒）"。
+
+### 验证结果
+
+- `pytest` 全量：**84 passed**（61 旧 + 21 分析 + 2 链路），仅剩已知 starlette 弃用提示。
+- **真实环境（双 mock）**：`task_probe.py` 12/12 PASS（阶段五回归无回归，summary 已是 Mock LLM 文本）；`transcription_probe.py mock` 9/9 PASS（真实 ffmpeg 提取 64722 bytes wav → 转写 → 分析 → 落库全链路）。
+- **真实环境（转写 mock + 分析默认 mimo 无 Key）**：`transcription_probe.py no-key` 7/7 PASS —— 流转 `['running','failed']`，`error_message = "未配置 MIMO_API_KEY（环境变量或 app/config.py），无法调用 mimo 分析 API。"`，失败后 `/health` 与视频查询仍 200。
+- 收尾核对：探针自清理后真实库 `videos=0, tasks=0, results=0`，`data/uploads` 与 `data/outputs` 仅 `.gitkeep`，8000 端口释放。
+
+### 遇到的问题与观察
+
+1. **JSON 修复链首版漏了数组层级**：括号配平只跟踪 `{}`，截断的章节 JSON（`{"chapters": [...` 未闭合）补 `}` 后留下未闭合 `[` → 解析失败（84 → 1 failed 定位）。修复：改用栈同时跟踪 `{}`/`[]`，截断时按剩余层级补 `]`/`}`；对应测试 `test_parse_llm_json_repairs_unclosed_object`。
+2. 官方图像理解响应 `content` 为纯字符串、不带结构化字段 —— 与转写一致，摘要/关键词/章节都必须走 `parse_llm_json` 的解析 + 校验 + 修复链。
+3. 真实 API（`mimo-v2.6-flash` 图像 + 文本分析）联网实测待填 Key 后进行（用户明确要求初版完成后再配 Key）。
+
+### 个人确认
+
+（待用户实际运行确认后填写）

@@ -33,6 +33,13 @@ MIMO_API_KEY = os.getenv("MIMO_API_KEY", "")
 MIMO_BASE_URL = os.getenv("MIMO_BASE_URL", "https://api.xiaomimimo.com/v1")
 MIMO_ASR_MODEL = os.getenv("MIMO_ASR_MODEL", "mimo-v2.5-asr")
 
+# AI 内容分析（阶段九）：mimo / mock
+# - mimo：mimo API 多模态（转写文本 + 关键帧图像输入，默认，需 MIMO_API_KEY）
+# - mock：MockLLM 固定 JSON（测试用，无需 API Key）
+ANALYSIS_PROVIDER = os.getenv("ANALYSIS_PROVIDER", "mimo")
+# 视觉模型：官方支持 mimo-v2.6-flash / mimo-v2.6-pro / mimo-v2.6-pro-ultraspeed / mimo-v2.5
+MIMO_ANALYSIS_MODEL = os.getenv("MIMO_ANALYSIS_MODEL", "mimo-v2.6-flash")
+
 
 def ensure_dirs() -> None:
     """确保运行时目录存在。"""
