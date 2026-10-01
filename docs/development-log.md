@@ -497,3 +497,37 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 阶段十二：日志系统 — 2026-10-01
+
+### 任务范围
+
+对应 `计划书\详细步骤.md` 阶段十二（12.1 ~ 12.4）：统一 Python logging、补全关键事件、测试与日志互不干扰、commit。
+
+### 完成内容
+
+- [x] 12.1 统一 logging：`app/main.py` 的 `logging.basicConfig(level=INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")`；各模块 `logger = logging.getLogger(__name__)`。**`app/` 包内零 print**（grep 全量确认）；残留 print 仅在 `run.py`（启动器控制台提示，早于 logging 配置）与 `tools/*.py`（探针 CLI 的 PASS/FAIL 输出），属预期保留。
+- [x] 12.2 关键事件全覆盖：task 启动/完成/失败（`task_service`，失败带 traceback）、音频提取完成（`audio_service`，含 bytes）、**转写完成（本阶段新增，provider/文件/字数/时长）**、Agent 启动/每次 Tool 调用（tool+args）/完成（tool_calls=N errors=N）/超限/工具失败（`agent.py`）。
+- [x] 12.3 测试与日志互不干扰：无 pytest 配置文件 → pytest 默认捕获日志，全量输出仅 warnings summary，不刷屏；失败用例才回显其捕获日志（阶段十定位 NameError 时已验证）。
+- [x] 12.4 commit：`feat: add logging system`（见 git log）。
+
+### 实现要点
+
+- 转写完成日志分别加在 `MimoTranscriptionService` 成功返回前与 `MockTranscriptionService.transcribe`（两处 provider 都有事件）。
+- 真实服务日志（GBK 控制台乱码仅显示问题）确认完整事件链：任务启动 → Agent 启动 → 8 次 tool=… args={} → 音频提取完成 → 转写完成 → 关键帧提取完成 → Agent 完成 → 任务完成。
+
+### 验证结果
+
+- `pytest` 全量 **115 passed, 1 warning in 17.34s**，输出无日志刷屏（12.3）。
+- 真实环境（三 provider mock）：`transcription_probe.py mock` 9/9 PASS，服务 stderr 中 12.2 列出的全部关键事件逐一出现。
+- 收尾核对：真实库 `videos=0, tasks=0, results=0`，8000 端口释放。
+
+### 遇到的问题与观察
+
+1. 「替换所有 print」的边界：应用层（app/）必须零 print；启动器与探针工具保留 print —— 它们是面向用户的 CLI 输出，且探针要在日志之外打印逐项 PASS/FAIL 行。已在 12.1 说明，避免误伤可用性。
+
+### 个人确认
+
+（待用户实际运行确认后填写）

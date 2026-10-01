@@ -143,7 +143,14 @@ class MimoTranscriptionService(TranscriptionService):
                     last_error = f"网络错误：{exc}"
                 else:
                     if resp.status_code == 200:
-                        return self._parse_response(resp, path)
+                        result = self._parse_response(resp, path)
+                        # 阶段十二 12.2：转写完成关键事件
+                        logger.info(
+                            "转写完成 provider=mimo 文件=%s 字数=%d 时长=%.1fs",
+                            path.name, len(result["text"]),
+                            result["segments"][-1]["end"] if result["segments"] else 0.0,
+                        )
+                        return result
                     detail = (resp.text or "").strip().replace("\n", " ")[-300:]
                     if resp.status_code == 429 or resp.status_code >= 500:
                         last_error = f"HTTP {resp.status_code}：{detail}"
@@ -213,6 +220,8 @@ class MockTranscriptionService(TranscriptionService):
         if not path.is_file():
             raise TranscriptionError(f"音频文件不存在：{path}")
         duration = wav_duration_seconds(path) or 0.0
+        # 阶段十二 12.2：转写完成关键事件
+        logger.info("转写完成 provider=mock 文件=%s 时长=%.1fs", path.name, duration)
         return {
             "text": self.MOCK_TEXT,
             "segments": [{"start": 0.0, "end": duration, "text": self.MOCK_TEXT}],
