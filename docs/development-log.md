@@ -341,3 +341,39 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 阶段八：关键帧提取 — 2026-10-01
+
+### 任务范围
+
+对应 `计划书/详细步骤.md` 阶段八（8.1 ~ 8.4）：`extract_keyframes` 用 OpenCV 固定间隔抽帧（默认每 30 秒）、输出 `data/outputs/{video_id}/frames/frame_0001.jpg…` 并记录 `timestamp`/`filepath`、测试（正常/短视频/文件不存在）、commit。
+
+### 完成内容
+
+- [x] 8.1 `app/services/keyframe_service.py`：`extract_keyframes(video_path, video_id, *, interval_seconds=30.0, output_root=None)`，OpenCV `VideoCapture` 按 `CAP_PROP_POS_MSEC` seek 抽帧，抽帧时间点 `0, interval, 2*interval… < 时长`
+- [x] 8.2 输出 `{output_root}/{video_id}/frames/frame_0001.jpg…`，返回记录 `[{"timestamp": float, "filepath": str}]`；重复提取前先清空该目录旧 `frame_*.jpg`（编号确定性，不残留）
+- [x] 8.3 `tests/test_keyframes.py` 8 条：正常（1 秒间隔 2 帧 + JPEG 魔数）、短视频（2 秒 < 默认 30 秒 → 第 0 秒 1 帧）、文件不存在 → `VideoNotFoundError`、非视频 → `InvalidVideoError`、间隔非正数、非法 video_id（路径穿越）、重跑清理旧帧、中文输出根回归防线
+- [x] 8.4 commit：`feat: add keyframe extraction`
+
+### 实现要点
+
+- **依赖**：新增 `opencv-python-headless>=4.10.0`（安装 5.0.0.93 + numpy 2.5.3），登记 `requirements.txt`；headless 版无 GUI 依赖，服务器可跑。
+- **前置校验复用阶段二**：`get_video_info` 抛 `VideoNotFoundError`/`InvalidVideoError`；新增 `KeyframeServiceError`（参数/目录非法）与 `KeyframeExtractionError`（打开/读帧/编码/写盘失败）。
+- **时长驱动的时间点**：ffprobe 时长决定目标点列表；短视频（时长 < 间隔）恒有第 0 秒帧；末尾 seek 超范围时读帧失败则以已抽到的帧为准（首帧即失败才报错）。
+- **本阶段只交付服务 + 测试**：按计划书 8.x 范围，不接入任务链路（关键帧供阶段九 9.1 图像输入使用）。
+
+### 验证结果
+
+- `pytest` 全量：**61 passed**（53 旧 + 8 关键帧），仅剩已知 starlette 弃用提示。
+- **真实环境实测**（真实 `config.OUTPUTS_DIR` = `data/outputs`）：默认间隔 → `frame_0001.jpg`（t=0）；重跑 1 秒间隔 → 2 帧且旧帧被清理重编号；JPEG 魔数 `\xff\xd8` 合法（13411 / 12914 bytes）；实测后目录已清理。
+
+### 遇到的问题与观察
+
+1. **`cv2.imwrite` 在中文路径下失败（真实环境抓到的真 bug）**：项目根为 `H:\视频分析工程`，`cv2.imwrite` 走窄字符 fopen，UTF-8 路径直接返回 False → `KeyframeExtractionError: 写入关键帧失败`；单测 `tmp_path` 是纯 ASCII 所以全绿未暴露。修复：改用 `cv2.imencode(".jpg", frame)` + Python `Path.write_bytes` 落盘（Unicode 安全），并新增中文输出根回归测试 `test_extract_keyframes_unicode_output_path`。
+2. 教训同阶段六：**真实路径（真实项目目录）验证不可省**，tmp_path 全绿不等于真实环境可跑。
+
+### 个人确认
+
+（待用户实际运行确认后填写）
