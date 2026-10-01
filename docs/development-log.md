@@ -567,3 +567,49 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 阶段十四：最终验收 — 2026-10-01
+
+### 任务范围
+
+对应 `计划书\详细步骤.md` 阶段十四：逐项人工检查验收清单（全部勾选）。
+
+### 验收证据（逐项）
+
+| 验收项 | 证据 |
+|---|---|
+| Python 环境正常 | Python 3.13.2，依赖可导入（fastapi 0.142.2 / sqlalchemy 2.1.1 / opencv 5.0.0） |
+| FastAPI 可以启动 | `run.py` 启动 uvicorn 成功，`Application startup complete` |
+| /health 正常 | `GET /health` → 200 `{"status":"ok"}`（探针与 curl 均验证） |
+| SQLite 正常 | `init_db` 建表、Repository 读写正常；收尾 `videos=0 tasks=0 results=0` |
+| 视频上传正常 | `POST /videos` → 201（探针），扩展名/大小/空文件 400/413/422 测试覆盖 |
+| 视频信息解析正常 | ffprobe 元数据入库，`GET /videos/1` → 200 含 duration/width/height/fps |
+| 音频提取正常 | 真实日志 `音频提取完成 … audio.wav（64722 bytes）` |
+| 关键帧提取正常 | 真实日志 `关键帧提取完成 … 1 帧`；阶段八真实实测 + 中文路径回归测试 |
+| 语音转文字正常 | `转写完成 provider=mock 文件=audio.wav 时长=2.0s`，transcript 落库（mock 路径；真实 API 待填 Key 回归） |
+| AI 摘要正常 | `generate_summary` → `save_result` → summary 落 `analysis_results`（Mock LLM 文本实测） |
+| 关键词正常 | keywords JSON 落库，测试断言 `json.loads(keywords)==MOCK_KEYWORDS` |
+| 章节正常 | chapters JSON 落库，测试断言结构 `{start,title,summary}` |
+| Agent Tool Calling 正常 | 真实日志 8×`Agent 工具调用 tool=… args={}` → `Agent 完成 tool_calls=8 errors=0` |
+| Task 状态正常 | 真实流转 `pending→running→success`（及失败路径 `failed`），202 即时返回 + 轮询 |
+| 异常处理正常 | 删文件→`任务失败 … 视频文件不存在…` traceback 完整、服务存活；404/400/413/422/500 映射测试 |
+| pytest 正常 | 全量 `115 passed, 1 warning in 8.71s`（warning 为已知 starlette 弃用提示） |
+| Mock 测试正常（无 Key 可跑） | 显式清空 `MIMO_API_KEY/TRANSCRIPTION_PROVIDER/ANALYSIS_PROVIDER/AGENT_PROVIDER/AGENT_DRIVER` 后 115 全绿 |
+| README 完整 | 17 项齐备（阶段十三 13.5，逐项编号） |
+| Git 提交记录完整 | `c2ff87e…9a68773` 基础 + 阶段一~十四 12 个 feature/test/docs commit，工作区干净 |
+| 项目可以从零重新安装运行 | 全新 `python -m venv` → `pip install -r requirements.txt` → `115 passed`（exit=0），临时环境已清理 |
+
+### 实现要点
+
+- 验收分三路并行完成：当前环境全量 pytest（清空环境变量）+ 真实服务探针（task_probe 12 项、transcription_probe mock 9 项全过）+ 后台从零重装流水线（venv→install→pytest）。
+- 全部证据来自真实运行输出，未引用文档自证（符合"真实可验证"约束）。
+
+### 遇到的问题与观察
+
+1. 「语音转文字/AI 摘要正常」在**真实 mimo API** 面上尚未回归（按用户指示初版完成前不填 Key）；mock 全链路与 mimo 客户端的 MockTransport 单测均已覆盖，填 Key 后需补一轮真实回归——已列入收尾提醒。
+
+### 个人确认
+
+（待用户实际运行确认后填写）
