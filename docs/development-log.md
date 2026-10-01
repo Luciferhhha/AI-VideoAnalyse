@@ -531,3 +531,39 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 阶段十三：文档与架构说明 — 2026-10-01
+
+### 任务范围
+
+对应 `计划书\详细步骤.md` 阶段十三（13.1 ~ 13.6）：四份 docs + README 补全 17 项 + commit。
+
+### 完成内容
+
+- [x] 13.1 `docs/architecture.md`：分层架构图（用户→FastAPI→Task Manager→Agent→Tool Layer→Service→FFmpeg/OpenCV/mimo API→SQLite）+ Agent/Service/Repository/API 四层关系表、数据流、配置切换点、5 条关键设计决策。
+- [x] 13.2 `docs/api.md`：全部 5 个 HTTP 接口（health / 上传 / 视频详情 / 发起任务 / 任务详情），含请求示例、状态码速查、错误 envelope 与结果字段说明。
+- [x] 13.3 `docs/agent.md`：Agent 工作流程（循环图 + 8 步）、Tool Calling 说明（8 Tool 输入/输出/依赖表 + 执行器保证 + Mimo/Mock LLM）、AgentState 状态管理与终止条件、与任务链路关系。
+- [x] 13.4 `docs/agent-development.md`：真实 AI Coding 案例——完整 Bug 修复过程（案例一 `cv2.imwrite` 中文路径静默失败：现象→定位→修改→回归测试→再测试）+ 案例二（JSON 修复链漏数组层级）+ 案例三（签名变更漏接缝）+ 4 条通用经验。
+- [x] 13.5 `README.md` 17 项补全：简介/特点/架构/技术栈/目录/安装/FFmpeg/环境变量/启动/API 示例/Agent 流程/Tool Calling/测试方法/示例运行结果/AI Coding 过程/已知问题/后续计划（替换原 37 行占位版）。
+- [x] 13.6 commit：`docs: complete project documentation`（见 git log）。
+
+### 实现要点
+
+- 文档只写**实测过**的事实：115 passed、探针 12/12、9/9、7/7、真实日志链、真实 error_message 文案均取自 development-log 既有记录，未虚构指标（阶段十四验收"README 完整"依据）。
+- README 17 项与计划书条目一一对应，按序编号 1–17，便于验收勾对。
+
+### 验证结果
+
+- 四份 docs + README 全部落盘，交叉链接（architecture/api/agent/agent-development/test-report/development-log）路径有效；
+- 文档改动零代码变更，全量测试结果沿用阶段十二的 **115 passed**（随后阶段十四将整体复测）。
+
+### 遇到的问题与观察
+
+1. glob 工具不支持 brace 模式（`{README.md,docs/*.md}` 返回空）——与 grep 的 include 同一教训，需用单一模式或分开查。
+2. 任务详情接口目前不暴露分析结果（阶段五 5.3 的既定契约），文档如实写明"结果在 `analysis_results` 表"，列入已知问题与后续计划，不虚构端点。
+
+### 个人确认
+
+（待用户实际运行确认后填写）
