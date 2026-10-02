@@ -44,7 +44,7 @@ class ModelsInfo(BaseModel):
 class MimoInfo(BaseModel):
     base_url: str
     api_key_configured: bool  # 只暴露是否已配置，绝不回传 Key 本身
-    api_key_masked: str | None = None  # 如 sk-c9ox****ox9wy
+    api_key_masked: str | None = None  # 形如 sk-abcd****wxyz（永不回传明文）
     api_key_source: str = "none"  # file / env / config / none
 
 

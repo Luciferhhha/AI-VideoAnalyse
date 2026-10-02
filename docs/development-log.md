@@ -741,7 +741,7 @@
 ### 验证结果
 
 - 全量 pytest **144 passed, 1 warning**（134 + 10 新），无回归。
-- 真实服务实测（重启加载新代码）：`GET /` 含「API Key 管理」区块与保存/删除按钮；`GET /api-keys/mimo` → `{"configured": true, "masked": "sk-c9o****x9wy", "source": "file", "storage": "dpapi", "storage_path": "data\\secrets\\mimo_api_key.bin"}`，响应体不含明文；`GET /settings` → `mimo` 含 `api_key_masked/api_key_source`；`PUT` dummy → 200 `source=file`、`PUT` 空值 → 400、`PUT` 掩码值 → 400、`DELETE` → `configured=false source=none`、随后把真实 Key 重新 `PUT` 回去 → `configured=true`、`/health` 200；`git check-ignore` 确认 `.gitignore:19:data/secrets/*` 命中。
+- 真实服务实测（重启加载新代码）：`GET /` 含「API Key 管理」区块与保存/删除按钮；`GET /api-keys/mimo` → `{"configured": true, "masked": "sk-abcd****wxyz", "source": "file", "storage": "dpapi", "storage_path": "data\\secrets\\mimo_api_key.bin"}`，响应体不含明文；`GET /settings` → `mimo` 含 `api_key_masked/api_key_source`；`PUT` dummy → 200 `source=file`、`PUT` 空值 → 400、`PUT` 掩码值 → 400、`DELETE` → `configured=false source=none`、随后把真实 Key 重新 `PUT` 回去 → `configured=true`、`/health` 200；`git check-ignore` 确认 `.gitignore:19:data/secrets/*` 命中。
 - 文档同步：`docs/api.md` 新增 7.6 API Key 管理小节（存储/加密/优先级 + 三端点状态码表）并把总览表扩到 14 行；`README.md` 特点、环境变量表、目录结构、启动、实测结果、已知问题同步。
 
 ### 遇到的问题与观察

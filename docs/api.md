@@ -239,7 +239,7 @@ curl "http://127.0.0.1:8000/logs?limit=20&level=INFO"
 #### GET /api-keys/mimo — 查询 Key 状态
 
 ```json
-{"configured": true, "masked": "sk-c9o****x9wy", "source": "file",
+{"configured": true, "masked": "sk-abcd****wxyz", "source": "file",
  "storage": "dpapi", "storage_path": "data\\secrets\\mimo_api_key.bin",
  "updated_at": "2026-10-02 13:27:03", "error": null}
 ```

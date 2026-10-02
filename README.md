@@ -143,7 +143,7 @@ curl http://127.0.0.1:8000/settings                                  # 200 运�
 
 - 全量测试：`144 passed, 1 warning in 7.88s`（warning 为已知 starlette testclient 弃用提示，含 15 条面板测试 + 10 条 API Key 管理测试）；
 - 控制面板实测：`GET /` 200（28KB 单文件 HTML，五大区块齐全）、`/videos` 返回既有 9 个视频（如 `keyframe_count=10`、`chapter_count=4`、`latest_task_status=success`）、`/tasks` 4 条、`/settings` 快照 `interval=5.0 / ffmpeg=true / key_configured=false`、`/logs` 捕获到 `app.main startup…`、`/docs` 仍为 Swagger；
-- API Key 管理实测：`GET /api-keys/mimo` → `{"configured": true, "masked": "sk-c9o****x9wy", "source": "file", "storage": "dpapi", "storage_path": "data\\secrets\\mimo_api_key.bin"}`，密文文件 278 字节且**不含 `sk-` 明文**（`git check-ignore` 确认被 `.gitignore:19` 忽略）；`PUT` 空值/掩码值 400、`PUT` dummy → `DELETE` → 重新 `PUT` 真实 Key 全程 200、`/health` 恢复 200；
+- API Key 管理实测：`GET /api-keys/mimo` → `{"configured": true, "masked": "sk-abcd****wxyz", "source": "file", "storage": "dpapi", "storage_path": "data\\secrets\\mimo_api_key.bin"}`，密文文件 278 字节且**不含 `sk-` 明文**（`git check-ignore` 确认被 `.gitignore:19` 忽略）；`PUT` 空值/掩码值 400、`PUT` dummy → `DELETE` → 重新 `PUT` 真实 Key 全程 200、`/health` 恢复 200；
 - 探针：`task_probe` 12/12 PASS、`transcription_probe mock` 9/9 PASS、`no-key` 7/7 PASS；
 - 真实日志链：`Agent 启动 video_id=1 task_id=1 max_tool_calls=10` → 8×`Agent 工具调用 tool=… args={}` → `音频提取完成 … 64722 bytes` → `转写完成 provider=mock … 时长=2.0s` → `Agent 完成 tool_calls=8 errors=0` → `任务完成 task_id=1 status=success`；
 - 无 Key 失败路径：任务 `failed`，`error_message="未配置 MIMO_API_KEY（环境变量或 app/config.py），无法调用 mimo Agent API。"`，`/health` 与视频查询仍 200。

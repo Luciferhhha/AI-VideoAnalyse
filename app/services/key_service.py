@@ -4,7 +4,7 @@
 - **存储**：`data/secrets/mimo_api_key.bin`（.gitignore 已忽略），内容是 Windows DPAPI
   （`CryptProtectData`）按**当前 Windows 用户**加密后的密文。磁盘上没有明文，
   文件拷到别的账号/机器上解不开。诚实定位：本地静态加密/混淆，不是绝对安全。
-- **显示**：端点只回掩码 `sk-c9ox****wy` 与来源，**永不回传明文**（也不提供查看明文的接口，
+- **显示**：端点只回掩码（形如 `sk-abcd****wxyz`）与来源，**永不回传明文**（也不提供查看明文的接口，
   要换就重新粘贴）。
 - **生效**：`save()` / `clear()` 立即回写 `config.MIMO_API_KEY`（服务层都是运行时读该属性），
   改完无需重启；启动时 `load_into_config()` 把文件里的 Key 载入 config。
