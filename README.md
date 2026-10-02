@@ -7,6 +7,10 @@
 
 AI Coding Agent 驱动的视频智能分析与内容工程平台：上传视频 → 解析元数据 → 提取音频/关键帧 → 语音转文字 → AI 生成摘要/关键词/章节，整条链路由 **Video Analysis Agent 通过 Tool Calling 驱动**，以异步任务（202 + 轮询）对外服务。
 
+**控制面板预览**（服务启动后访问 `http://127.0.0.1:8000/`，`/docs` 仍为 Swagger）：
+
+![控制面板截图](docs/screenshots/control-panel.jpeg)
+
 ## 1. 简介
 
 - 上传视频（≤500MB，6 种格式）自动用 ffprobe 解析元数据；
