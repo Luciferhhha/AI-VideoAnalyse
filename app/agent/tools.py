@@ -197,7 +197,7 @@ TOOLS: dict[str, ToolSpec] = {
             "properties": {
                 "interval_seconds": {
                     "type": "number",
-                    "description": "可选：抽帧间隔（秒），默认 30",
+                    "description": "可选：抽帧间隔（秒），默认 5",
                 }
             },
             "additionalProperties": False,

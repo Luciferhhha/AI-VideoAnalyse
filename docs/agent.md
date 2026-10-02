@@ -34,7 +34,7 @@ run_analysis_task(task_id)                 # task_service（AGENT_DRIVER=agent�
 | 1 | `get_video_info` | `{}` | 元数据 dict（时长/分辨率/帧率/编码…） | 无需参数，第一步 |
 | 2 | `extract_audio` | `{}` | `{"audio_path": "data/outputs/{id}/audio.wav"}` | FFmpeg 提取 16kHz 单声道 wav |
 | 3 | `transcribe_audio` | `{audio_path?}` | `{"text", "segments"}` | 默认取第 2 步的 audio_path；缺前序步骤 → `ToolError` |
-| 4 | `extract_keyframes` | `{interval_seconds?}`（默认 30） | `{"count", "frames":[{timestamp, filepath}]}` | OpenCV 每 N 秒一帧 |
+| 4 | `extract_keyframes` | `{interval_seconds?}`（默认 5） | `{"count", "frames":[{timestamp, filepath}]}` | OpenCV 每 N 秒一帧 |
 | 5 | `generate_summary` | `{}` | `{"summary"}` | 必须先有转写文本 |
 | 6 | `generate_keywords` | `{}` | `{"keywords": [...]}` | 必须先有转写文本 |
 | 7 | `generate_chapters` | `{}` | `{"chapters":[{start,title,summary}]}` | 用 video.duration 校准 |

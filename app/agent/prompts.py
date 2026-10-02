@@ -40,7 +40,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "extract_keyframes": (
         "按固定间隔抽取关键帧图片，返回帧列表（timestamp/filepath）。"
-        "可选 interval_seconds 控制抽帧间隔（秒），默认 30。"
+        "可选 interval_seconds 控制抽帧间隔（秒），默认 5。"
     ),
     "generate_summary": (
         "基于已得到的转写文本与关键帧生成视频摘要（JSON 契约 {summary: string}）。"

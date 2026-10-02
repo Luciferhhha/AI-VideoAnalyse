@@ -1,7 +1,7 @@
 """关键帧提取服务：用 OpenCV 按固定时间间隔抽帧。
 
 职责（阶段八）：
-- `extract_keyframes(video_path, video_id, *, interval_seconds=30.0)`：默认每
+- `extract_keyframes(video_path, video_id, *, interval_seconds=5.0)`：默认每
   30 秒抽 1 帧，输出 `{output_root}/{video_id}/frames/frame_0001.jpg…`（默认
   `config.OUTPUTS_DIR`，即 `data/outputs/{video_id}/frames/`），每帧返回
   `{"timestamp": 秒, "filepath": 路径}` 记录。
@@ -64,7 +64,7 @@ def extract_keyframes(
     video_path: str | Path,
     video_id: int | str,
     *,
-    interval_seconds: float = 30.0,
+    interval_seconds: float = 5.0,
     output_root: str | Path | None = None,
 ) -> list[dict[str, Any]]:
     """按固定间隔抽帧，返回记录列表 `[{"timestamp": float, "filepath": str}]`。

@@ -34,7 +34,7 @@ def test_extract_keyframes_normal(sample_video: Path, tmp_path: Path) -> None:
 
 
 def test_extract_keyframes_short_video(sample_video: Path, tmp_path: Path) -> None:
-    """短视频：2 秒 < 默认 30 秒间隔 → 至少抽第 0 秒 1 帧。"""
+    """短视频：2 秒 < 默认 5 秒间隔 → 至少抽第 0 秒 1 帧。"""
     records = extract_keyframes(sample_video, "v1", output_root=tmp_path)
 
     assert len(records) == 1
