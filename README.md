@@ -1,5 +1,10 @@
 # 视频智能分析平台（video-agent）
 
+[![CI](https://github.com/Luciferhhha/AI-VideoAnalyse/actions/workflows/ci.yml/badge.svg)](https://github.com/Luciferhhha/AI-VideoAnalyse/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)
+![tests](https://img.shields.io/badge/tests-144%20passed-brightgreen.svg)
+
 AI Coding Agent 驱动的视频智能分析与内容工程平台：上传视频 → 解析元数据 → 提取音频/关键帧 → 语音转文字 → AI 生成摘要/关键词/章节，整条链路由 **Video Analysis Agent 通过 Tool Calling 驱动**，以异步任务（202 + 轮询）对外服务。
 
 ## 1. 简介

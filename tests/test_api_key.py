@@ -13,6 +13,8 @@
 `config.MIMO_API_KEY`，保证起始状态确定。
 """
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -20,6 +22,12 @@ from app import config
 from app.services import key_service
 
 PLAIN = "sk-panel-test-abcdefghijklmnop"  # 测试用假 Key（非真实 Key）
+
+# 真正走 DPAPI（CryptProtectData）的用例只在 Windows 上执行；
+# 非 Windows 平台 key_service 会明确报「DPAPI 仅在 Windows 上可用」，对应 500 已由路由兜住。
+windows_only = pytest.mark.skipif(
+    os.name != "nt", reason="DPAPI（CryptProtectData）仅 Windows 可用"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +40,7 @@ def _reset_last_error():
 # ---------------------------------------------------------------- 底层加解密
 
 
+@windows_only
 def test_protect_unprotect_roundtrip() -> None:
     blob = key_service.protect(PLAIN)
 
@@ -52,6 +61,7 @@ def test_mask_hides_middle() -> None:
 # ---------------------------------------------------------------- 保存 / 查询
 
 
+@windows_only
 def test_save_writes_ciphertext_and_takes_effect(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -73,6 +83,7 @@ def test_save_writes_ciphertext_and_takes_effect(
     assert client.get("/health").status_code == 200
 
 
+@windows_only
 def test_save_strips_quotes_and_whitespace(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -108,6 +119,7 @@ def test_put_rejects_empty_and_masked_without_side_effect(
     assert config.MIMO_API_KEY == ""  # config 未被污染
 
 
+@windows_only
 def test_get_status_and_settings_never_expose_plaintext(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -130,6 +142,7 @@ def test_get_status_and_settings_never_expose_plaintext(
 # ---------------------------------------------------------------- 删除 / 回落
 
 
+@windows_only
 def test_delete_removes_file_and_clears_config(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -147,6 +160,7 @@ def test_delete_removes_file_and_clears_config(
     assert config.MIMO_API_KEY == ""
 
 
+@windows_only
 def test_delete_falls_back_to_environment_variable(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -179,6 +193,7 @@ def test_status_source_env_before_any_save(
 # ---------------------------------------------------------------- 启动载入
 
 
+@windows_only
 def test_load_into_config_priority_and_bad_file(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
