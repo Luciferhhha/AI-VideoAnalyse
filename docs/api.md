@@ -212,14 +212,64 @@ curl "http://127.0.0.1:8000/logs?limit=20&level=INFO"
   "app": {"title": "视频智能分析平台", "version": "0.1.0"},
   "providers": {"transcription": "mimo", "analysis": "mimo", "agent": "mimo", "driver": "agent"},
   "models": {"asr": "…", "analysis": "…", "agent": "…"},
-  "mimo": {"base_url": "…", "api_key_configured": false},
+  "mimo": {"base_url": "…", "api_key_configured": false,
+           "api_key_masked": null, "api_key_source": "none"},
   "limits": {"max_upload_size_mb": 500, "allowed_extensions": [".avi", ".flv", ".mkv", ".mov", ".mp4", ".webm"]},
   "keyframe_interval_seconds_default": 5.0,
   "ffmpeg_available": true, "ffprobe_available": true
 }
 ```
 
-> 安全约定：`mimo.api_key_configured` 只是布尔值，**绝不回传 API Key 明文**（有测试守卫）。
+> 安全约定：`mimo` 块只回传布尔/掩码/来源，**绝不回传 API Key 明文**（有测试守卫）。
+> `api_key_source` 取值：`file`（面板密钥文件，优先）/ `env`（环境变量 `MIMO_API_KEY`）/ `config`（运行时写入）/ `none`（未配置）。
+
+### 7.6 API Key 管理（增 / 换 / 删）
+
+面板「API 控制 → API Key 管理」块对应的三个端点，全部**只回传状态与掩码，永不回传明文**。
+
+存储与加密：
+
+| 项 | 说明 |
+|---|---|
+| 存储位置 | `data/secrets/mimo_api_key.bin`（已加入 `.gitignore`，不入库） |
+| 加密方式 | Windows **DPAPI**（`CryptProtectData`，零新增依赖），密文绑定当前 Windows 用户 |
+| 生效方式 | `PUT` 成功即写入 `config.MIMO_API_KEY`，**立即生效无需重启**；服务启动时 `load_into_config()` 自动加载 |
+| 优先级 | 密钥文件（`file`）> 环境变量 `MIMO_API_KEY`（`env`）> 空（`none`） |
+
+#### GET /api-keys/mimo — 查询 Key 状态
+
+```json
+{"configured": true, "masked": "sk-c9o****x9wy", "source": "file",
+ "storage": "dpapi", "storage_path": "data\\secrets\\mimo_api_key.bin",
+ "updated_at": "2026-10-02 13:27:03", "error": null}
+```
+
+`masked` = 首 6 位 + `****` + 末 4 位（过短只回 `****`）；`error` 为密文解密失败时的原因（如跨 Windows 账号拷贝）。
+
+#### PUT /api-keys/mimo — 新增 / 更换 Key
+
+请求体：`{"api_key": "sk-…"}`（1–512 字符）。
+
+| 状态码 | 场景 |
+|---|---|
+| 200 | 已保存（DPAPI 密文落盘 + 立即写入运行时配置），返回状态对象 |
+| 400 | `API Key 不能为空`（空白/仅引号） / `看起来是掩码值（含 ****），请粘贴完整 API Key` |
+| 422 | 缺字段、空串或超过 512 字符 |
+
+```bash
+curl -X PUT http://127.0.0.1:8000/api-keys/mimo -H "Content-Type: application/json" -d "{\"api_key\":\"sk-…\"}"
+```
+
+#### DELETE /api-keys/mimo — 清空 / 删除 Key
+
+删除密钥文件（幂等，文件本就不存在也算成功），并把运行时值回落到环境变量 `MIMO_API_KEY`：
+
+- 环境变量也为空 → `{"configured": false, "source": "none"}`（面板提示「已清空，当前未配置」）
+- 环境变量有值 → `{"configured": true, "source": "env", "masked": "…"}`（回退生效）
+
+```bash
+curl -X DELETE http://127.0.0.1:8000/api-keys/mimo
+```
 
 ## 8. 端点总览与状态码速查
 
@@ -235,7 +285,10 @@ curl "http://127.0.0.1:8000/logs?limit=20&level=INFO"
 | GET | `/tasks/{id}` | 200 | 任务详情与状态 |
 | GET | `/tasks/{id}/result` | 200 | 分析结果（成功任务；未完成/失败 409） |
 | GET | `/logs` | 200 | 最近日志（环形缓冲，limit/level 参数） |
-| GET | `/settings` | 200 | 运行配置快照（不含 API Key） |
+| GET | `/settings` | 200 | 运行配置快照（掩码 + 来源，不含明文） |
+| GET | `/api-keys/mimo` | 200 | API Key 状态（是否配置、掩码、来源、存储路径） |
+| PUT | `/api-keys/mimo` | 200 | 新增 / 更换 API Key（DPAPI 加密落盘，立即生效；空值/掩码值 400） |
+| DELETE | `/api-keys/mimo` | 200 | 清空 / 删除 API Key（回落环境变量，幂等） |
 
 常见错误码：`400` 非法内容 / `404` 资源不存在 / `409` 状态冲突 / `413` 文件过大 / `422` 参数校验失败 / `500` 服务端依赖缺失。
 `VideoServiceError` 由全局 handler 统一翻译（`VideoNotFoundError→404`、`InvalidVideoError→400`、其他→500，见 `app/main.py`）。

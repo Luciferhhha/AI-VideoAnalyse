@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LogLineResponse(BaseModel):
@@ -44,6 +44,30 @@ class ModelsInfo(BaseModel):
 class MimoInfo(BaseModel):
     base_url: str
     api_key_configured: bool  # 只暴露是否已配置，绝不回传 Key 本身
+    api_key_masked: str | None = None  # 如 sk-c9ox****ox9wy
+    api_key_source: str = "none"  # file / env / config / none
+
+
+class ApiKeyStatusResponse(BaseModel):
+    """`/api-keys/mimo` 的响应：掩码与来源，**永不包含明文**。"""
+
+    configured: bool
+    masked: str | None = None
+    source: str  # file（面板保存的密钥文件）/ env（环境变量）/ config / none
+    storage: str  # 恒为 dpapi（Windows 用户级静态加密）
+    storage_path: str  # 密钥文件相对路径，如 data/secrets/mimo_api_key.bin
+    updated_at: str | None = None  # 密钥文件修改时间，未保存过为 None
+    error: str | None = None  # 最近一次读取失败原因（解密失败等）
+
+
+class ApiKeyUpdateRequest(BaseModel):
+    """`PUT /api-keys/mimo` 请求体：要保存的新 API Key。"""
+
+    api_key: str = Field(
+        min_length=1,
+        max_length=512,
+        description="完整 mimo API Key（服务端会去掉首尾空白与成对引号）",
+    )
 
 
 class LimitsInfo(BaseModel):

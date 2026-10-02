@@ -12,7 +12,7 @@ from app.api.routes_panel import router as panel_router
 from app.api.routes_tasks import router as tasks_router
 from app.api.routes_videos import router as videos_router
 from app.database.database import init_db
-from app.services import log_service
+from app.services import key_service, log_service
 from app.services.video_service import (
     FFmpegNotFoundError,
     InvalidVideoError,
@@ -34,6 +34,7 @@ PANEL_HTML: Path = config.BASE_DIR / "app" / "static" / "index.html"
 async def lifespan(_: FastAPI):
     config.ensure_dirs()
     log_service.install()  # 面板「日志流程」的内存环形缓冲（幂等）
+    key_service.load_into_config()  # 面板保存的加密 API Key（文件优先于环境变量）
     init_db()
     logger.info("startup: runtime directories and database ready")
     yield

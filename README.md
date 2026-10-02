@@ -7,13 +7,14 @@ AI Coding Agent 驱动的视频智能分析与内容工程平台：上传视频 
 - 上传视频（≤500MB，6 种格式）自动用 ffprobe 解析元数据；
 - 一键发起分析任务，后台完成：音频提取（FFmpeg）→ 语音转文字（mimo API）→ 关键帧抽取（OpenCV）→ AI 摘要/关键词/章节（mimo 多模态）→ 结果落库；
 - 核心链路是 LLM 驱动的 8-Tool Agent 循环，也保留直连链路作对照与降级；
-- 本地**控制面板**（`GET /`，单文件 HTML）覆盖：视频上传、分片/关键帧统计、分析结果、API 控制、日志流程；
+- 本地**控制面板**（`GET /`，单文件 HTML）覆盖：视频上传、分片/关键帧统计、分析结果、API 控制（含 API Key 管理）、日志流程；
 - 开发全程由 AI Coding Agent 按计划书逐阶段推进（阶段一~十四），每阶段验证→commit→登记日志。
 
 ## 2. 特点
 
 - **Agent Tool Calling**：8 个 Tool、`MAX_TOOL_CALLS=10` 上限、错误回填可自纠，全程落日志；
 - **控制面板**：零构建的单文件静态页（`app/static/index.html`），纯原生 JS/CSS，无外部 CDN；`/docs` 仍为 Swagger 文档；
+- **API Key 管理**：面板内增 / 换 / 删，明文不落盘——以 Windows **DPAPI** 密文存 `data/secrets/mimo_api_key.bin`（已 gitignore），接口与页面只显示掩码 `sk-****`，保存即生效；优先级 `密钥文件 > 环境变量 MIMO_API_KEY > 空`；
 - **异步任务**：`POST /videos/{id}/analyze` 立即 202，后台执行，状态机 `pending→running→success|failed`，失败带 `error_message` 且服务不崩溃；
 - **无 API Key 可跑**：三处 provider（转写/分析/Agent）均可切 `mock`，全量测试不依赖 Key；
 - **可切换接口**：本地 Whisper 接口预留（第一版不启用），mimo 为唯一外部依赖；
@@ -51,14 +52,14 @@ video-agent/
 │   ├── agent/          # prompts.py / tools.py / agent.py（Tool Calling 核心）
 │   ├── database/       # models + repository（唯一写 SQL 处）
 │   ├── schemas/        # Pydantic 契约
-│   ├── services/       # video/audio/transcription/keyframe/analysis/task/log/panel
+│   ├── services/       # video/audio/transcription/keyframe/analysis/task/log/panel/key
 │   ├── static/         # 控制面板单文件页 index.html（GET / 返回）
 │   ├── config.py       # 全部配置与环境变量
 │   └── main.py         # FastAPI 入口、logging、全局异常
-├── tests/              # 134 条测试（conftest.py 共享 fixture）
+├── tests/              # 144 条测试（conftest.py 共享 fixture）
 ├── tools/              # 真实环境探针（task_probe / transcription_probe）
 ├── docs/               # architecture / api / agent / agent-development / test-report / development-log
-├── data/               # uploads / outputs / database（运行时生成，不入库）
+├── data/               # uploads / outputs / database / secrets（运行时生成，不入库）
 ├── requirements.txt
 └── run.py              # 启动入口
 ```
@@ -81,7 +82,7 @@ python -m venv .venv
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `MIMO_API_KEY` | 空 | mimo API Key（初版完成前不填，验证走 mock） |
+| `MIMO_API_KEY` | 空 | mimo API Key；面板「API Key 管理」保存的密钥文件（`data/secrets/mimo_api_key.bin`，DPAPI 密文）**优先于**本变量 |
 | `MIMO_BASE_URL` | `https://api.xiaomimimo.com/v1` | OpenAI 兼容端点 |
 | `TRANSCRIPTION_PROVIDER` | `mimo` | `mimo` / `mock` / `whisper`（预留） |
 | `ANALYSIS_PROVIDER` | `mimo` | `mimo` / `mock` |
@@ -140,8 +141,9 @@ curl http://127.0.0.1:8000/settings                                  # 200 运�
 
 ## 14. 示例运行结果（实测）
 
-- 全量测试：`134 passed, 1 warning in 7.58s`（warning 为已知 starlette testclient 弃用提示，含 15 条控制面板测试）；
+- 全量测试：`144 passed, 1 warning in 7.88s`（warning 为已知 starlette testclient 弃用提示，含 15 条面板测试 + 10 条 API Key 管理测试）；
 - 控制面板实测：`GET /` 200（28KB 单文件 HTML，五大区块齐全）、`/videos` 返回既有 9 个视频（如 `keyframe_count=10`、`chapter_count=4`、`latest_task_status=success`）、`/tasks` 4 条、`/settings` 快照 `interval=5.0 / ffmpeg=true / key_configured=false`、`/logs` 捕获到 `app.main startup…`、`/docs` 仍为 Swagger；
+- API Key 管理实测：`GET /api-keys/mimo` → `{"configured": true, "masked": "sk-c9o****x9wy", "source": "file", "storage": "dpapi", "storage_path": "data\\secrets\\mimo_api_key.bin"}`，密文文件 278 字节且**不含 `sk-` 明文**（`git check-ignore` 确认被 `.gitignore:19` 忽略）；`PUT` 空值/掩码值 400、`PUT` dummy → `DELETE` → 重新 `PUT` 真实 Key 全程 200、`/health` 恢复 200；
 - 探针：`task_probe` 12/12 PASS、`transcription_probe mock` 9/9 PASS、`no-key` 7/7 PASS；
 - 真实日志链：`Agent 启动 video_id=1 task_id=1 max_tool_calls=10` → 8×`Agent 工具调用 tool=… args={}` → `音频提取完成 … 64722 bytes` → `转写完成 provider=mock … 时长=2.0s` → `Agent 完成 tool_calls=8 errors=0` → `任务完成 task_id=1 status=success`；
 - 无 Key 失败路径：任务 `failed`，`error_message="未配置 MIMO_API_KEY（环境变量或 app/config.py），无法调用 mimo Agent API。"`，`/health` 与视频查询仍 200。
@@ -159,7 +161,9 @@ curl http://127.0.0.1:8000/settings                                  # 200 运�
 - 真实 mimo API 链路**尚未用真实 Key 回归**（按约定初版完成后填 Key 验证）；
 - `whisper` 提供方仅预留接口，调用即报「第一版不启用」；
 - 控制面板日志为**进程内环形缓冲**（1000 条，重启即清空），不是文件日志；`logs/launcher.log` 仅记录启动信息；
-- 面板列表无分页/搜索（`GET /videos`、`GET /tasks` 全量返回，本地小数据量够用）。
+- 面板列表无分页/搜索（`GET /videos`、`GET /tasks` 全量返回，本地小数据量够用）；
+- API Key 密文由 **DPAPI 绑定当前 Windows 用户**：`data/secrets/mimo_api_key.bin` 拷到别的机器/账号解不开，需在面板重新保存；面板 Key 无过期/轮换提醒；
+- Key 明文在本机仍可被同 Windows 用户读取（DPAPI 是静态加密而非服务端保险箱），仅保证不入库、不回传、不落日志。
 
 ## 17. 后续计划
 

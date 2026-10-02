@@ -713,3 +713,43 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 增量：面板 API Key 管理（增 / 换 / 删，DPAPI 加密）— 2026-10-02
+
+### 任务范围
+
+用户要求（面板优化）：① 增加 API Key 更改选项，可以增加、删除、清空当前 API Key；② 先查清当前 Key 放在哪里，把它重新放入控制面板，并做一定的加密显示与存储。
+
+### 勘察结论（Key 原位置）
+
+- 唯一读取处 `app/config.py:36` `MIMO_API_KEY = os.getenv("MIMO_API_KEY", "")`；仓库内**无 `.env`**，全仓库 `sk-` 搜索只命中测试字面量（真实 Key 从未进 git）。
+- 真实 Key 位于 **Windows「用户级」环境变量 `MIMO_API_KEY`**（`[Environment]::GetEnvironmentVariable('MIMO_API_KEY','User')`，49 字符，machine scope 为空）；由服务进程环境继承（本 harness 派生的 shell 不继承它，故此前 `/settings` 显示 `key_configured=false`）。
+- `.gitignore` 原本忽略 `data/uploads|outputs|database`，**未忽略 `data/secrets/`** → 必须补，否则新密钥文件有入库风险。
+
+### 完成内容
+
+- 新建 `app/services/key_service.py`：Windows **DPAPI**（`CryptProtectData` / `CryptUnprotectData`，ctypes，零新增依赖）加密写入 `data/secrets/mimo_api_key.bin`（原子写：`.tmp` + `replace`）；`save()`（strip + 去引号，空值/掩码值 `KeyValidationError`）、`clear()`（删文件 + 回落环境变量）、`load_into_config()`、`status()`（`configured/masked/source/storage/storage_path/updated_at/error`）、`mask()` = 首 6 + `****` + 末 4。
+- 端点：`GET /api-keys/mimo`、`PUT /api-keys/mimo`（body `{"api_key": …}`，1–512 字符）、`DELETE /api-keys/mimo`，**只回状态与掩码，永不回明文**；`KeyValidationError` → 400、pydantic 越界 → 422。
+- `app/main.py` lifespan 在 `log_service.install()` 后调 `key_service.load_into_config()`（文件优先于环境变量）；`panel_service.settings_snapshot()` 的 `mimo` 块扩为 `api_key_configured / api_key_masked / api_key_source`；`schemas/panel.py` 加 `ApiKeyStatusResponse` / `ApiKeyUpdateRequest`。
+- 面板 `app/static/index.html`：「API 控制」卡内新增「API Key 管理」子块（状态徽章 + 掩码 + 来源 + 加密方式 + 文件路径 + 更新时间、`type=password` 输入 + 显示切换、保存 / 清空按钮 + `confirm()` 二次确认）；`GET /settings` 配置网格的 `MIMO Key` 行显示掩码与来源；控制台 method 增 `PUT` / `DELETE`，`PUT` 发 JSON body；预设按钮加 `GET /api-keys/mimo`；启动时 `loadApiKey()` 随其他轮询初始化。
+- `.gitignore` 加 `data/secrets/*` + `!data/secrets/.gitkeep`，并建 `data/secrets/.gitkeep`；`tests/conftest.py` 把 `key_service.KEY_FILE` 指到 `tmp_path`，保证测试永远读不到真实密钥文件。
+- 测试 `tests/test_api_key.py` 10 条：DPAPI 往返、掩码规则、保存后磁盘无明文且立即生效、strip 引号空白、空值/掩码值 400 且无副作用、端点与 `/settings` 永不含明文、删除后回落环境变量、`load_into_config` 优先级与坏密文处理。
+- Key 迁移：把用户级环境变量里的真实 Key 经 `key_service.save()` 写入密钥文件（只经 `$env:MIMO_MIGRATE` 传给 python，**未打印明文**），磁盘 278 字节且不含 `sk-`；**用户级环境变量保留**作为回退。
+
+### 验证结果
+
+- 全量 pytest **144 passed, 1 warning**（134 + 10 新），无回归。
+- 真实服务实测（重启加载新代码）：`GET /` 含「API Key 管理」区块与保存/删除按钮；`GET /api-keys/mimo` → `{"configured": true, "masked": "sk-c9o****x9wy", "source": "file", "storage": "dpapi", "storage_path": "data\\secrets\\mimo_api_key.bin"}`，响应体不含明文；`GET /settings` → `mimo` 含 `api_key_masked/api_key_source`；`PUT` dummy → 200 `source=file`、`PUT` 空值 → 400、`PUT` 掩码值 → 400、`DELETE` → `configured=false source=none`、随后把真实 Key 重新 `PUT` 回去 → `configured=true`、`/health` 200；`git check-ignore` 确认 `.gitignore:19:data/secrets/*` 命中。
+- 文档同步：`docs/api.md` 新增 7.6 API Key 管理小节（存储/加密/优先级 + 三端点状态码表）并把总览表扩到 14 行；`README.md` 特点、环境变量表、目录结构、启动、实测结果、已知问题同步。
+
+### 遇到的问题与观察
+
+1. **DPAPI 的边界**：密文绑定当前 Windows 用户，`data/secrets/mimo_api_key.bin` 拷到别的机器/账号解不开（服务会 `warning` 记录并回落环境变量）；它是静态加密而非服务端保险箱，同 Windows 用户本机仍可读到 Key。文档与「已知问题」写明，不做夸大。
+2. **优先级设计**：`密钥文件 > 环境变量 > 空`。面板保存立即覆盖运行时值（无需重启），删除则回落环境变量 —— 这样用户级环境变量可作为「面板清空后仍能跑」的兜底，也因此迁移时**不删**环境变量。
+3. **测试隔离是硬前提**：`client` fixture 的 lifespan 会执行 `load_into_config()`，若不把 `KEY_FILE` 指到 `tmp_path`，全量测试会读到真实 Key；且现有「无 Key 必失败」的用例都是显式传空串构造客户端，不读 config，因此载入真实 Key 不会破坏它们 —— 该结论先行核对了 `test_transcription/test_agent/test_analysis` 才动手。
+
+### 个人确认
+
+（待用户实际运行确认后填写）

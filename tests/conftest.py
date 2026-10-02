@@ -27,9 +27,14 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from app import config
     from app.database.database import Base, create_db_engine, get_db
     from app.main import app
+    from app.services import key_service
 
     monkeypatch.setattr(config, "UPLOADS_DIR", tmp_path / "uploads")
     monkeypatch.setattr(config, "OUTPUTS_DIR", tmp_path / "outputs")
+    # 面板 API Key 管理：密钥文件指向 tmp，测试永远读不到 data/secrets 里的真实密钥
+    monkeypatch.setattr(
+        key_service, "KEY_FILE", tmp_path / "secrets" / "mimo_api_key.bin"
+    )
     monkeypatch.setattr(config, "TRANSCRIPTION_PROVIDER", "mock")
     monkeypatch.setattr(config, "ANALYSIS_PROVIDER", "mock")
     # 阶段十：任务走 Agent 驱动（config.AGENT_DRIVER 默认 agent），LLM 用脚本化 Mock

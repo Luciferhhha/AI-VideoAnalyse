@@ -26,6 +26,7 @@ from app.database.repository import (
     TaskRepository,
     VideoRepository,
 )
+from app.services import key_service
 from app.services.keyframe_service import extract_keyframes
 
 
@@ -118,8 +119,9 @@ def _ffmpeg_available(name: str) -> bool:
 
 
 def settings_snapshot() -> dict[str, Any]:
-    """当前运行配置快照；只暴露「是否已配置 Key」的布尔值，绝不回传 Key 本身。"""
+    """当前运行配置快照；只暴露「是否已配置 Key + 掩码 + 来源」，绝不回传 Key 本身。"""
     interval = inspect.signature(extract_keyframes).parameters["interval_seconds"]
+    key_status = key_service.status()
     return {
         "app": {"title": config.APP_TITLE, "version": config.APP_VERSION},
         "providers": {
@@ -135,7 +137,10 @@ def settings_snapshot() -> dict[str, Any]:
         },
         "mimo": {
             "base_url": config.MIMO_BASE_URL,
-            "api_key_configured": bool(config.MIMO_API_KEY),
+            # Key 只回传「是否已配置 + 掩码 + 来源」，绝不回传真值（见 key_service）
+            "api_key_configured": key_status["configured"],
+            "api_key_masked": key_status["masked"],
+            "api_key_source": key_status["source"],
         },
         "limits": {
             "max_upload_size_mb": config.MAX_UPLOAD_SIZE_MB,

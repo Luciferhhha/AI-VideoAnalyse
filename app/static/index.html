@@ -192,6 +192,24 @@
   .resp-meta .code-2 { color: var(--ok); }
   .resp-meta .code-4, .resp-meta .code-5 { color: var(--err); }
 
+  /* ---------- API Key 管理 ---------- */
+  .keybox {
+    background: #10141a; border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px; margin-bottom: 14px;
+  }
+  .keybox .khead {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    font-size: 12px; color: var(--muted); margin-bottom: 8px;
+  }
+  .keybox .khead b { color: var(--text); font-size: 13px; font-weight: 600; }
+  .keybox .khead .mono { font-family: Consolas, monospace; color: var(--text); }
+  .key-row { display: flex; gap: 8px; align-items: center; }
+  .key-row input { flex: 1; min-width: 0; font-family: Consolas, monospace; }
+  .key-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  .key-actions .count { color: var(--muted); font-size: 12px; }
+  .keybox .note { color: var(--muted); font-size: 11px; margin: 8px 0 0; }
+  .mono { font-family: Consolas, "Courier New", monospace; }
+
   /* ---------- 日志 ---------- */
   .log-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
   .log-head .count { color: var(--muted); font-size: 12px; margin-left: auto; }
@@ -279,22 +297,39 @@
   <!-- 4. API 控制 -->
   <section class="card span-5">
     <h2>API 控制</h2>
-    <p class="hint">GET /settings 只读配置快照 + 任意端点请求控制台</p>
+    <p class="hint">GET /settings 只读配置快照 + API Key 管理（增/换/删）+ 任意端点请求控制台</p>
     <div class="settings" id="settingsGrid"><div class="item"><div class="k">加载中…</div></div></div>
+
+    <div class="keybox">
+      <div class="khead"><b>API Key 管理</b><span id="apiKeyStatus">加载中…</span></div>
+      <div class="key-row">
+        <input type="password" id="apiKeyInput" placeholder="粘贴新的 mimo API Key（sk-…）"
+               autocomplete="off" spellcheck="false">
+        <label class="check"><input type="checkbox" id="apiKeyShow">显示</label>
+      </div>
+      <div class="key-actions">
+        <button class="primary" id="btnKeySave">保存</button>
+        <button id="btnKeyDelete">清空 / 删除</button>
+        <span class="count" id="apiKeyMsg"></span>
+      </div>
+      <p class="note">保存即 DPAPI 加密写入密钥文件并立即生效（无需重启）；页面与接口只显示掩码，不回传明文。</p>
+    </div>
+
     <div class="presets">
       <button data-m="GET" data-p="/health">GET /health</button>
       <button data-m="GET" data-p="/videos">GET /videos</button>
       <button data-m="GET" data-p="/tasks">GET /tasks</button>
       <button data-m="GET" data-p="/logs?limit=20">GET /logs</button>
       <button data-m="GET" data-p="/settings">GET /settings</button>
+      <button data-m="GET" data-p="/api-keys/mimo">GET key 状态</button>
       <button data-m="POST" data-p="/videos/1/analyze">POST analyze</button>
     </div>
     <div class="console-row">
-      <select id="apiMethod"><option>GET</option><option>POST</option></select>
+      <select id="apiMethod"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select>
       <input type="text" id="apiPath" value="/health" spellcheck="false">
       <button class="primary" id="btnSend">发送</button>
     </div>
-    <textarea id="apiBody" placeholder='POST 请求体（JSON，可留空）{"file": "..."}' hidden></textarea>
+    <textarea id="apiBody" placeholder='POST/PUT 请求体（JSON，可留空）{"api_key": "sk-…"}' hidden></textarea>
     <div class="resp-meta" id="apiMeta"></div>
     <div id="apiResp">尚未发送请求。</div>
   </section>
@@ -384,7 +419,10 @@ async function loadSettings() {
       ["转写 provider", s.providers.transcription],
       ["分析 provider", s.providers.analysis],
       ["Agent provider", s.providers.agent + " / " + s.providers.driver],
-      ["MIMO Key", yn(s.mimo.api_key_configured)],
+      ["MIMO Key", yn(s.mimo.api_key_configured) +
+        (s.mimo.api_key_masked ? ` <span class="mono">${esc(s.mimo.api_key_masked)}</span>` : "") +
+        (s.mimo.api_key_source && s.mimo.api_key_source !== "none"
+          ? ` <span style="color:var(--muted)">· ${esc(s.mimo.api_key_source)}</span>` : "")],
       ["ASR 模型", s.models.asr],
       ["分析模型", s.models.analysis],
       ["上传上限", s.limits.max_upload_size_mb + " MB"],
@@ -622,7 +660,8 @@ async function loadResult(taskId) {
 
 /* ---------------- API 控制台 ---------------- */
 function syncBodyVisibility() {
-  $("#apiBody").hidden = $("#apiMethod").value === "GET";
+  const m = $("#apiMethod").value;
+  $("#apiBody").hidden = !(m === "POST" || m === "PUT");
 }
 $("#apiMethod").addEventListener("change", syncBodyVisibility);
 document.querySelectorAll(".presets button").forEach((b) => b.addEventListener("click", () => {
@@ -639,7 +678,7 @@ async function sendApi() {
   const path = $("#apiPath").value.trim();
   if (!path) return;
   const opts = { method };
-  if (method === "POST") {
+  if (method === "POST" || method === "PUT") {
     const body = $("#apiBody").value.trim();
     if (body) {
       try { JSON.parse(body); } catch (_) {
@@ -698,6 +737,84 @@ $("#btnLogClear").addEventListener("click", () => {
   $("#logList").innerHTML = `<div class="log"><span class="ms" style="color:var(--muted)">已清屏（服务端缓冲未清）</span></div>`;
 });
 
+/* ---------------- API Key 管理 ---------------- */
+const KEY_SOURCE_TEXT = { file: "面板密钥文件", env: "环境变量", config: "运行时写入", none: "未配置" };
+
+async function loadApiKey() {
+  try {
+    const r = await api("/api-keys/mimo");
+    if (!r.ok) throw new Error(detailOf(r));
+    const s = r.data;
+    const where = KEY_SOURCE_TEXT[s.source] || s.source;
+    const path = s.storage_path ? ` · ${esc(s.storage_path)}` : "";
+    $("#apiKeyStatus").innerHTML = s.configured
+      ? `<span class="pill st-success">已配置</span>` +
+        `<span class="mono">${esc(s.masked || "")}</span>` +
+        `<span>· ${esc(where)} · ${esc(String(s.storage).toUpperCase())} 加密 · 更新 ${esc(s.updated_at || "—")}${path}</span>`
+      : `<span class="pill st-failed">未配置</span><span>· ${esc(where)}${path}</span>`;
+    if (s.error) {
+      $("#apiKeyMsg").innerHTML = `<span style="color:var(--warn)">${esc(s.error)}</span>`;
+    }
+    return s;
+  } catch (e) {
+    $("#apiKeyStatus").innerHTML = `<span style="color:var(--err)">${esc(e.message)}</span>`;
+    return null;
+  }
+}
+
+async function saveApiKey() {
+  const value = $("#apiKeyInput").value;
+  if (!value.trim()) {
+    $("#apiKeyMsg").innerHTML = `<span style="color:var(--warn)">请先输入 API Key</span>`;
+    return;
+  }
+  $("#apiKeyMsg").textContent = "保存中…";
+  try {
+    const r = await api("/api-keys/mimo", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: value }),
+    });
+    if (!r.ok) {
+      $("#apiKeyMsg").innerHTML = `<span style="color:var(--err)">${esc(detailOf(r))}</span>`;
+      return;
+    }
+    $("#apiKeyInput").value = "";
+    $("#apiKeyShow").checked = false;
+    $("#apiKeyInput").type = "password";
+    $("#apiKeyMsg").innerHTML = `<span style="color:var(--ok)">已保存并立即生效：${esc(r.data.masked || "")}</span>`;
+    await Promise.all([loadApiKey(), loadSettings()]);
+  } catch (e) {
+    $("#apiKeyMsg").innerHTML = `<span style="color:var(--err)">${esc(String(e))}</span>`;
+  }
+}
+
+async function deleteApiKey() {
+  const ok = confirm("确定清空 / 删除已保存的 API Key？\n删除后回落到环境变量 MIMO_API_KEY，若环境变量也为空则变为「未配置」。");
+  if (!ok) return;
+  $("#apiKeyMsg").textContent = "删除中…";
+  try {
+    const r = await api("/api-keys/mimo", { method: "DELETE" });
+    if (!r.ok) {
+      $("#apiKeyMsg").innerHTML = `<span style="color:var(--err)">${esc(detailOf(r))}</span>`;
+      return;
+    }
+    $("#apiKeyMsg").innerHTML = r.data.configured
+      ? `<span style="color:var(--warn)">密钥文件已删除，回落到环境变量：${esc(r.data.masked || "")}</span>`
+      : `<span style="color:var(--ok)">已清空，当前未配置</span>`;
+    await Promise.all([loadApiKey(), loadSettings()]);
+  } catch (e) {
+    $("#apiKeyMsg").innerHTML = `<span style="color:var(--err)">${esc(String(e))}</span>`;
+  }
+}
+
+$("#btnKeySave").addEventListener("click", saveApiKey);
+$("#btnKeyDelete").addEventListener("click", deleteApiKey);
+$("#apiKeyShow").addEventListener("change", (e) => {
+  $("#apiKeyInput").type = e.target.checked ? "text" : "password";
+});
+$("#apiKeyInput").addEventListener("keydown", (e) => { if (e.key === "Enter") saveApiKey(); });
+
 /* ---------------- 轮询 ---------------- */
 async function refreshAll() {
   await Promise.all([loadHealth(), loadVideos(), loadTasks(), loadLogs()]);
@@ -712,7 +829,7 @@ $("#btnRefresh").addEventListener("click", refreshAll);
 
 /* ---------------- 启动 ---------------- */
 syncBodyVisibility();
-Promise.all([loadHealth(), loadSettings(), loadVideos(), loadTasks(), loadLogs()]);
+Promise.all([loadHealth(), loadSettings(), loadApiKey(), loadVideos(), loadTasks(), loadLogs()]);
 </script>
 </body>
 </html>

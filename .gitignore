@@ -16,9 +16,11 @@ venv/
 data/uploads/*
 data/outputs/*
 data/database/*
+data/secrets/*
 !data/uploads/.gitkeep
 !data/outputs/.gitkeep
 !data/database/.gitkeep
+!data/secrets/.gitkeep
 
 # Environment secrets
 .env

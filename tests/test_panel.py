@@ -202,7 +202,13 @@ def test_settings_snapshot_shape(client: TestClient) -> None:
     assert body["app"]["version"]
     assert set(body["providers"]) == {"transcription", "analysis", "agent", "driver"}
     assert set(body["models"]) == {"asr", "analysis", "agent"}
-    assert set(body["mimo"]) == {"base_url", "api_key_configured"}
+    assert set(body["mimo"]) == {
+        "base_url",
+        "api_key_configured",
+        "api_key_masked",
+        "api_key_source",
+    }
+    assert body["mimo"]["api_key_source"] in {"file", "env", "config", "none"}
     assert set(body["limits"]) == {"max_upload_size_mb", "allowed_extensions"}
     assert body["limits"]["max_upload_size_mb"] == 500
     assert ".mp4" in body["limits"]["allowed_extensions"]
