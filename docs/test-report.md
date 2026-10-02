@@ -68,6 +68,31 @@ cd H:\视频分析工程\video-agent
 
 单文件示例：`.venv\Scripts\python.exe -m pytest tests/test_agent.py -q`
 
+## 最终全量（阶段十五交付，2026-10-02）
+
+```
+144 passed, 1 warning in 12.62s
+```
+
+- 运行环境同上表（Windows / Python 3.13 / 无 API Key）；warning 仍为同一条 starlette `TestClient` 弃用提示（第三方）。
+- 相比阶段十一快照的 115 条，增量 **+29**：结果查询接口 +4（test_tasks 9→13）、控制面板 +15（test_panel）、面板 API Key 管理 +10（test_api_key，Windows 专用 7 条在非 Windows 平台自动 skip）。
+
+| 文件 | 数量 | 说明 |
+| --- | ---: | --- |
+| tests/test_agent.py | 28 | 不变 |
+| tests/test_analysis.py | 22 | 不变 |
+| tests/test_transcription.py | 20 | 不变 |
+| tests/test_tasks.py | 13 | +4：`GET /tasks/{id}/result` 的 200 / 409 / 404 与转写落库 |
+| tests/test_keyframes.py | 8 | 不变 |
+| tests/test_database.py | 7 | 不变 |
+| tests/test_api.py | 6 | 不变 |
+| tests/test_audio.py | 6 | 不变 |
+| tests/test_upload.py | 5 | 不变 |
+| tests/test_video.py | 4 | 不变 |
+| tests/test_panel.py | 15 | 新增：页面五大区块与零外部依赖、404 兜底、`/docs` 仍 Swagger、视频/任务列表、`/logs` 结构与 limit/level、`/settings` 结构与 Key 不泄漏 |
+| tests/test_api_key.py | 10 | 新增：DPAPI 往返、掩码规则、磁盘与响应永不含明文、保存立即生效、空值/掩码值 400、删除回退环境变量、加载优先级 |
+| **合计** | **144** | |
+
 ## 备注
 
 - 测试隔离：`conftest.py` 的 `client` fixture 把上传/输出目录与 SQLite 重定向到 `tmp_path`，并把转写/分析/Agent provider 切到 `mock`；真实 `data/` 不被测试触碰。

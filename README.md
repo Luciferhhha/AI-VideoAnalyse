@@ -141,7 +141,7 @@ curl http://127.0.0.1:8000/settings                                  # 200 运�
 ## 13. 测试方法
 
 ```powershell
-.venv\Scripts\python -m pytest -q        # 134 passed, 1 warning（无 API Key）
+.venv\Scripts\python -m pytest -q        # 144 passed, 1 warning（无 API Key）
 ```
 
 - 全部测试**不需要** `MIMO_API_KEY`（mock provider + `httpx.MockTransport`）；
@@ -179,5 +179,19 @@ curl http://127.0.0.1:8000/settings                                  # 200 运�
 - 填写 `MIMO_API_KEY` 后对转写/分析/Agent 三链路做真实 API 回归；
 - 分析结果列表接口（按视频列出历史任务结果）；
 - 控制面板增强：多文件上传队列、结果导出、日志过滤与导出（第一版为单文件简洁面板）；
-- 计划书阶段十五（另行启动）：整理 12 项交付物、简历描述、GitHub 开源；
+- 计划书阶段十五（收尾输出）已完成：交付物清单见 [docs/deliverables.md](docs/deliverables.md)；
 - 本地 Whisper 提供方落地（接口已预留）、多任务并发与限流优化。
+
+## 18. 交付物（阶段十五）
+
+| 交付物 | 位置 |
+|---|---|
+| README | 本文件 |
+| 架构图说明 | [docs/architecture.md](docs/architecture.md) |
+| API 文档 | [docs/api.md](docs/api.md) |
+| Agent 流程 + Tool Calling 说明 | [docs/agent.md](docs/agent.md) |
+| 测试报告（144 passed 最终全量 + 十类覆盖对照） | [docs/test-report.md](docs/test-report.md) |
+| AI Coding 过程 | [docs/agent-development.md](docs/agent-development.md) |
+| 项目难点 | [docs/project-challenges.md](docs/project-challenges.md) |
+| 本人实际完成的工作 | [docs/personal-work.md](docs/personal-work.md) |
+| 交付物索引与 GitHub 开源状态 | [docs/deliverables.md](docs/deliverables.md) |
