@@ -130,21 +130,117 @@ curl http://127.0.0.1:8000/tasks/1
 curl http://127.0.0.1:8000/tasks/1/result
 ```
 
-## 7. 端点总览与状态码速查
+## 7. 控制面板（阶段十六）
+
+单文件静态页 `app/static/index.html`，由 `GET /` 直接返回（`text/html`），无需构建与前端依赖；
+`/docs` 仍为 FastAPI 自带 Swagger，未做任何改造。面板五大区块：视频上传 / 视频分片与关键帧 /
+分析结果 / API 控制 / 日志流程，前端每 2.5 秒轮询刷新。
+
+### 7.1 GET / — 面板页面
+
+```bash
+curl http://127.0.0.1:8000/
+```
+
+`200 text/html`；页面文件缺失时 `404 {"detail": "控制面板页面缺失：…"}`。该路由 `include_in_schema=False`，不出现在 `/docs`。
+
+### 7.2 GET /videos — 视频列表（面板表格数据源）
+
+`200`（`list[VideoListResponse]`，新→旧）：
+
+```json
+[{
+  "id": 9, "filename": "demo.mp4", "duration": 12.0,
+  "width": 320, "height": 240, "fps": 10.0, "created_at": "2026-10-01T12:00:00",
+  "keyframe_count": 10, "chapter_count": 4,
+  "task_count": 1, "latest_task_id": 4, "latest_task_status": "success"
+}]
+```
+
+- `keyframe_count`：`data/outputs/{id}/frames/frame_*.jpg` 的**磁盘实数**（未分析为 0，目录异常按 0 兜底）
+- `chapter_count`：最近一次**成功**任务结果里的 `chapters` 数组长度（内容分片数；未分析为 0）
+- `latest_task_*`：该视频最新任务的状态/编号（`null` 表示尚无任务）
+- 空库返回 `[]`（**无分页参数**）
+
+### 7.3 GET /tasks — 任务列表（面板轮询数据源）
+
+`200`（`list[TaskListResponse]`，新→旧）：
+
+```json
+[{
+  "task_id": 4, "video_id": 9, "video_filename": "demo.mp4",
+  "status": "success", "created_at": "…", "started_at": "…",
+  "finished_at": "…", "error_message": null
+}]
+```
+
+`video_filename` 由 `video_id` 关联得到（视频缺失时回退 `#<id>`）。空库返回 `[]`。
+
+### 7.4 GET /logs — 最近日志（面板「日志流程」）
+
+进程内环形缓冲（`app/services/log_service.py`，最多 1000 条，**进程重启即清空**），只读不落盘。
+
+| 参数 | 说明 |
+|---|---|
+| `limit` | 1–1000，默认 200；返回**旧→新**的最后 N 条 |
+| `level` | 可选，`DEBUG/INFO/WARNING/ERROR/CRITICAL`，只保留该级别及以上 |
+
+```bash
+curl "http://127.0.0.1:8000/logs?limit=20&level=INFO"
+```
+
+```json
+{
+  "items": [
+    {"ts": "2026-10-02 12:48:23", "level": "INFO",
+     "logger": "app.services.task_service", "message": "任务启动 task_id=4 video_id=9"}
+  ],
+  "total": 1
+}
+```
+
+- `total` 为缓冲内当前条数（不受 `level` 影响），`items` 最长为 `min(limit, 过滤后条数)`
+- `limit<1` 或 `limit>1000`、非法 `level` → `422`
+- 只采集 INFO 及以上（任务启动/完成、Agent 工具调用、异常堆栈）
+
+### 7.5 GET /settings — 运行配置快照（面板「API 控制」）
+
+`200`（`SettingsResponse`），**只读**，读取请求时刻的 `config`：
+
+```json
+{
+  "app": {"title": "视频智能分析平台", "version": "0.1.0"},
+  "providers": {"transcription": "mimo", "analysis": "mimo", "agent": "mimo", "driver": "agent"},
+  "models": {"asr": "…", "analysis": "…", "agent": "…"},
+  "mimo": {"base_url": "…", "api_key_configured": false},
+  "limits": {"max_upload_size_mb": 500, "allowed_extensions": [".avi", ".flv", ".mkv", ".mov", ".mp4", ".webm"]},
+  "keyframe_interval_seconds_default": 5.0,
+  "ffmpeg_available": true, "ffprobe_available": true
+}
+```
+
+> 安全约定：`mimo.api_key_configured` 只是布尔值，**绝不回传 API Key 明文**（有测试守卫）。
+
+## 8. 端点总览与状态码速查
 
 | 方法 | 路径 | 成功 | 说明 |
 |---|---|---|---|
+| GET | `/` | 200 | 控制面板页面（HTML，`/docs` 不受影响） |
 | GET | `/health` | 200 | 健康检查 |
 | POST | `/videos` | 201 | 上传（file 字段，≤500MB，6 种扩展名） |
+| GET | `/videos` | 200 | 视频列表（关键帧/章节/最近任务聚合，新→旧） |
 | GET | `/videos/{id}` | 200 | 视频详情 |
 | POST | `/videos/{id}/analyze` | 202 | 创建分析任务（异步） |
+| GET | `/tasks` | 200 | 任务列表（新→旧，带视频文件名） |
 | GET | `/tasks/{id}` | 200 | 任务详情与状态 |
 | GET | `/tasks/{id}/result` | 200 | 分析结果（成功任务；未完成/失败 409） |
+| GET | `/logs` | 200 | 最近日志（环形缓冲，limit/level 参数） |
+| GET | `/settings` | 200 | 运行配置快照（不含 API Key） |
 
 常见错误码：`400` 非法内容 / `404` 资源不存在 / `409` 状态冲突 / `413` 文件过大 / `422` 参数校验失败 / `500` 服务端依赖缺失。
 `VideoServiceError` 由全局 handler 统一翻译（`VideoNotFoundError→404`、`InvalidVideoError→400`、其他→500，见 `app/main.py`）。
 
-## 8. 分析结果字段（存储层）
+## 9. 分析结果字段（存储层）
 
 结果经 `ResultRepository.get_by_task(task_id)` 落库于 `analysis_results`，由 `GET /tasks/{id}/result` 返回：
 

@@ -36,3 +36,16 @@ class TaskResultResponse(BaseModel):
     chapters: list[dict] = []
     transcript: str | None = None
     finished_at: datetime | None = None
+
+
+class TaskListResponse(BaseModel):
+    """GET /tasks 响应：控制面板用的任务列表行（新→旧，带视频文件名）。"""
+
+    task_id: int
+    video_id: int
+    video_filename: str
+    status: str
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error_message: str | None = None

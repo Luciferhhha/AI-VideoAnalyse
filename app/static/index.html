@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>视频智能分析平台 · 控制面板</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #161a21;
+    --line: #242a34;
+    --text: #e6e9ef;
+    --muted: #8b93a3;
+    --accent: #4f8cff;
+    --ok: #2ecc71;
+    --warn: #f1c40f;
+    --err: #ff5c5c;
+    --pending: #8b93a3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.6 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ---------- 顶栏 ---------- */
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 14px 20px;
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 10;
+  }
+  header .title { font-size: 16px; font-weight: 600; }
+  header .title .dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--accent); margin-right: 8px; vertical-align: 1px;
+  }
+  header .spacer { flex: 1; }
+  .health { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; }
+  .health .lamp { width: 9px; height: 9px; border-radius: 50%; background: var(--pending); }
+  .health.on .lamp { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .health.off .lamp { background: var(--err); box-shadow: 0 0 8px var(--err); }
+  .meta { color: var(--muted); font-size: 13px; }
+
+  /* ---------- 布局 ---------- */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 16px;
+    padding: 16px 20px 32px;
+    max-width: 1500px;
+    margin: 0 auto;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px 16px;
+    min-width: 0;
+  }
+  .span-4 { grid-column: span 4; }
+  .span-5 { grid-column: span 5; }
+  .span-7 { grid-column: span 7; }
+  .span-8 { grid-column: span 8; }
+  .span-12 { grid-column: span 12; }
+  @media (max-width: 1100px) {
+    .span-4, .span-5, .span-7, .span-8 { grid-column: span 12; }
+  }
+  .card h2 {
+    margin: 0 0 4px;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: .03em;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card h2::before {
+    content: ""; width: 3px; height: 13px; background: var(--accent); border-radius: 2px;
+  }
+  .hint { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+
+  /* ---------- 通用控件 ---------- */
+  button {
+    background: #1e2530; color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 12px; font-size: 13px; cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  button:hover { background: #262f3d; border-color: #33405280; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #3f7ef0; }
+  button.ghost { background: transparent; }
+  select, input[type="text"], textarea {
+    background: #10141a; color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 8px; font-size: 13px; font-family: inherit;
+  }
+  textarea { font-family: Consolas, "Courier New", monospace; resize: vertical; }
+  select:focus, input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  label.check { color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+
+  .pill {
+    display: inline-block; padding: 1px 8px; border-radius: 999px;
+    font-size: 12px; border: 1px solid transparent; white-space: nowrap;
+  }
+  .st-pending { color: var(--pending); background: #8b93a31a; border-color: #8b93a344; }
+  .st-running { color: var(--accent); background: #4f8cff1a; border-color: #4f8cff55; animation: pulse 1.2s infinite; }
+  .st-success { color: var(--ok); background: #2ecc711a; border-color: #2ecc7155; }
+  .st-failed  { color: var(--err);  background: #ff5c5c1a; border-color: #ff5c5c55; }
+  @keyframes pulse { 50% { opacity: .5; } }
+
+  .msg { font-size: 13px; margin-top: 10px; min-height: 18px; }
+  .msg.ok { color: var(--ok); }
+  .msg.err { color: var(--err); }
+  .msg.info { color: var(--muted); }
+
+  /* ---------- 上传 ---------- */
+  #dropZone {
+    border: 1.5px dashed #33405280; border-radius: 8px;
+    padding: 22px 12px; text-align: center; color: var(--muted);
+    cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  #dropZone.hover { border-color: var(--accent); background: #4f8cff12; color: var(--text); }
+  #dropZone strong { color: var(--text); display: block; margin-bottom: 4px; }
+  .bar { height: 6px; background: #10141a; border-radius: 4px; overflow: hidden; margin-top: 12px; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .upload-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+  /* ---------- 表格 ---------- */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.name { white-space: normal; max-width: 240px; word-break: break-all; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #ffffff06; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); text-align: center; padding: 24px 0; font-size: 13px; }
+  .totals { color: var(--muted); font-size: 12px; margin-left: auto; font-weight: 400; }
+  .row-actions { display: flex; gap: 6px; }
+  .row-actions button { padding: 3px 9px; font-size: 12px; }
+
+  /* ---------- 结果 ---------- */
+  .result-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .result-head select { min-width: 240px; }
+  .kv { margin: 0 0 10px; }
+  .kv dt { color: var(--muted); font-size: 12px; margin-bottom: 3px; }
+  .kv dd { margin: 0 0 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    background: #4f8cff1a; border: 1px solid #4f8cff44; color: #9dc0ff;
+    padding: 2px 9px; border-radius: 999px; font-size: 12px;
+  }
+  .chapter { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--line); }
+  .chapter:last-child { border-bottom: none; }
+  .chapter .t {
+    color: var(--accent); font-family: Consolas, monospace; font-size: 12px;
+    min-width: 48px; padding-top: 2px;
+  }
+  .chapter .c b { display: block; font-size: 13px; }
+  .chapter .c span { color: var(--muted); font-size: 12px; }
+  details.transcript summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  details.transcript p {
+    white-space: pre-wrap; background: #10141a; border: 1px solid var(--line);
+    border-radius: 6px; padding: 10px; margin: 8px 0 0; font-size: 13px;
+  }
+
+  /* ---------- API 控制 ---------- */
+  .settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin-bottom: 14px; }
+  .settings .item { min-width: 0; }
+  .settings .k { color: var(--muted); font-size: 11px; }
+  .settings .v { font-size: 13px; word-break: break-all; }
+  .settings .v .on { color: var(--ok); }
+  .settings .v .off { color: var(--err); }
+  .console-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .console-row select { width: 88px; }
+  .console-row input { flex: 1; min-width: 0; font-family: Consolas, monospace; }
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .presets button { padding: 3px 8px; font-size: 12px; color: var(--muted); }
+  #apiBody { width: 100%; min-height: 62px; }
+  #apiResp {
+    background: #10141a; border: 1px solid var(--line); border-radius: 6px;
+    padding: 9px; margin-top: 8px; max-height: 260px; overflow: auto;
+    font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all;
+  }
+  .resp-meta { font-size: 12px; margin-top: 8px; color: var(--muted); }
+  .resp-meta .code-2 { color: var(--ok); }
+  .resp-meta .code-4, .resp-meta .code-5 { color: var(--err); }
+
+  /* ---------- 日志 ---------- */
+  .log-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .log-head .count { color: var(--muted); font-size: 12px; margin-left: auto; }
+  #logList {
+    background: #10141a; border: 1px solid var(--line); border-radius: 6px;
+    height: 280px; overflow-y: auto; padding: 6px 0;
+    font-family: Consolas, "Courier New", monospace; font-size: 12px;
+  }
+  .log { display: flex; gap: 8px; padding: 1px 10px; align-items: baseline; }
+  .log .t { color: #55607a; flex: none; }
+  .log .lv { flex: none; width: 62px; font-weight: 600; }
+  .log .lg { color: #6f7a92; flex: none; width: 170px; overflow: hidden; text-overflow: ellipsis; }
+  .log .ms { white-space: pre-wrap; word-break: break-all; }
+  .log.INFO .lv { color: var(--ok); }
+  .log.WARNING .lv { color: var(--warn); }
+  .log.ERROR .lv, .log.CRITICAL .lv { color: var(--err); }
+  .log.DEBUG .lv { color: var(--muted); }
+
+  footer { color: var(--muted); font-size: 12px; text-align: center; padding: 0 20px 26px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title"><span class="dot"></span>视频智能分析平台 · 控制面板</div>
+  <div class="health" id="healthBox"><span class="lamp"></span><span id="healthText">检测中…</span></div>
+  <div class="spacer"></div>
+  <label class="check"><input type="checkbox" id="autoRefresh" checked>自动刷新 2.5s</label>
+  <button id="btnRefresh" class="ghost">立即刷新</button>
+  <span class="meta" id="appVersion">v–</span>
+  <a href="/docs" target="_blank">API 文档 /docs</a>
+</header>
+
+<main class="grid">
+
+  <!-- 1. 视频上传 -->
+  <section class="card span-4">
+    <h2>视频上传</h2>
+    <p class="hint">POST /videos · ≤500MB · .mp4 .avi .mov .mkv .flv .webm</p>
+    <div id="dropZone">
+      <strong>点击选择 或 拖拽视频到此处</strong>
+      上传后自动解析时长 / 分辨率 / 帧率
+    </div>
+    <input type="file" id="fileInput" accept=".mp4,.avi,.mov,.mkv,.flv,.webm" hidden>
+    <div class="bar"><i id="uploadBar"></i></div>
+    <div class="msg info" id="uploadMsg">尚未选择文件</div>
+    <div class="upload-actions">
+      <button class="primary" id="btnAnalyzeNew" disabled>对新视频发起分析</button>
+      <button id="btnGotoResult" disabled>查看分析结果</button>
+    </div>
+  </section>
+
+  <!-- 2. 视频分片 / 关键帧 -->
+  <section class="card span-8">
+    <h2>视频 · 分片与关键帧
+      <span class="totals" id="videoTotals"></span>
+    </h2>
+    <p class="hint">GET /videos · 关键帧为 <code>data/outputs/{id}/frames</code> 实际张数，章节为最近成功结果的内容分片</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>文件名</th><th class="num">时长</th><th>分辨率</th>
+            <th class="num">关键帧</th><th class="num">章节/分片</th><th class="num">任务数</th>
+            <th>最近任务</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="videoRows"><tr><td colspan="9" class="empty">加载中…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3. 分析结果 -->
+  <section class="card span-7">
+    <h2>分析结果</h2>
+    <p class="hint">GET /tasks/{id}/result · 仅 success 任务有结果（pending/failed 返回 409）</p>
+    <div class="result-head">
+      <select id="taskSelect"><option value="">暂无任务</option></select>
+      <button class="primary" id="btnLoadResult">查询结果</button>
+      <span id="taskStatusPill"></span>
+    </div>
+    <div id="resultBox" class="msg info">选择任务后点击「查询结果」。</div>
+  </section>
+
+  <!-- 4. API 控制 -->
+  <section class="card span-5">
+    <h2>API 控制</h2>
+    <p class="hint">GET /settings 只读配置快照 + 任意端点请求控制台</p>
+    <div class="settings" id="settingsGrid"><div class="item"><div class="k">加载中…</div></div></div>
+    <div class="presets">
+      <button data-m="GET" data-p="/health">GET /health</button>
+      <button data-m="GET" data-p="/videos">GET /videos</button>
+      <button data-m="GET" data-p="/tasks">GET /tasks</button>
+      <button data-m="GET" data-p="/logs?limit=20">GET /logs</button>
+      <button data-m="GET" data-p="/settings">GET /settings</button>
+      <button data-m="POST" data-p="/videos/1/analyze">POST analyze</button>
+    </div>
+    <div class="console-row">
+      <select id="apiMethod"><option>GET</option><option>POST</option></select>
+      <input type="text" id="apiPath" value="/health" spellcheck="false">
+      <button class="primary" id="btnSend">发送</button>
+    </div>
+    <textarea id="apiBody" placeholder='POST 请求体（JSON，可留空）{"file": "..."}' hidden></textarea>
+    <div class="resp-meta" id="apiMeta"></div>
+    <div id="apiResp">尚未发送请求。</div>
+  </section>
+
+  <!-- 5. 日志流程 -->
+  <section class="card span-12">
+    <h2>日志流程</h2>
+    <p class="hint">GET /logs · 进程内环形缓冲（最近 1000 条，重启清空）</p>
+    <div class="log-head">
+      <select id="logLevel">
+        <option value="">全部级别</option>
+        <option value="INFO">INFO 及以上</option>
+        <option value="WARNING">WARNING 及以上</option>
+        <option value="ERROR">ERROR 及以上</option>
+      </select>
+      <label class="check"><input type="checkbox" id="logAuto" checked>自动滚动</label>
+      <button id="btnLogClear">清屏（仅本页）</button>
+      <span class="count" id="logCount"></span>
+    </div>
+    <div id="logList"><div class="log"><span class="ms" style="color:var(--muted)">等待日志…</span></div></div>
+  </section>
+
+</main>
+
+<footer>
+  控制面板为本地单文件静态页（<code>app/static/index.html</code>），由 FastAPI 在 <code>GET /</code> 提供；
+  接口文档仍为 <a href="/docs" target="_blank">/docs</a>。
+</footer>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const state = { videos: [], tasks: [], busy: false, lastVideoId: null, tasksLoaded: false };
+
+function esc(v) {
+  return String(v ?? "").replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+function fmtDuration(sec) {
+  if (sec === null || sec === undefined || isNaN(sec)) return "—";
+  sec = Math.round(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+function pill(status) {
+  const cls = { pending: "st-pending", running: "st-running", success: "st-success", failed: "st-failed" }[status] || "st-pending";
+  return `<span class="pill ${cls}">${esc(status || "—")}</span>`;
+}
+async function api(path, options = {}) {
+  const started = performance.now();
+  const resp = await fetch(path, options);
+  const ms = Math.round(performance.now() - started);
+  const text = await resp.text();
+  let data = text;
+  try { data = text ? JSON.parse(text) : null; } catch (_) { /* 非 JSON 原样返回 */ }
+  return { ok: resp.ok, status: resp.status, ms, data, text };
+}
+function detailOf(r) {
+  if (r.data && typeof r.data === "object" && r.data.detail !== undefined) {
+    return typeof r.data.detail === "string" ? r.data.detail : JSON.stringify(r.data.detail);
+  }
+  return typeof r.data === "string" ? r.data.slice(0, 300) : JSON.stringify(r.data);
+}
+
+/* ---------------- 健康 / 配置 ---------------- */
+async function loadHealth() {
+  try {
+    const r = await api("/health");
+    const ok = r.ok && r.data && r.data.status === "ok";
+    $("#healthBox").className = "health " + (ok ? "on" : "off");
+    $("#healthText").textContent = ok ? "服务正常" : "服务异常";
+  } catch (_) {
+    $("#healthBox").className = "health off";
+    $("#healthText").textContent = "无法连接";
+  }
+}
+async function loadSettings() {
+  try {
+    const r = await api("/settings");
+    if (!r.ok) throw new Error(detailOf(r));
+    const s = r.data;
+    $("#appVersion").textContent = "v" + s.app.version;
+    const yn = (b) => b ? '<span class="on">已配置</span>' : '<span class="off">未配置</span>';
+    const rows = [
+      ["转写 provider", s.providers.transcription],
+      ["分析 provider", s.providers.analysis],
+      ["Agent provider", s.providers.agent + " / " + s.providers.driver],
+      ["MIMO Key", yn(s.mimo.api_key_configured)],
+      ["ASR 模型", s.models.asr],
+      ["分析模型", s.models.analysis],
+      ["上传上限", s.limits.max_upload_size_mb + " MB"],
+      ["抽帧间隔", s.keyframe_interval_seconds_default + " 秒"],
+      ["FFmpeg", yn(s.ffmpeg_available) + " / ffprobe " + yn(s.ffprobe_available)],
+      ["Base URL", s.mimo.base_url],
+    ];
+    $("#settingsGrid").innerHTML = rows.map(([k, v]) =>
+      `<div class="item"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`).join("");
+  } catch (e) {
+    $("#settingsGrid").innerHTML = `<div class="item"><div class="k">配置加载失败</div><div class="v" style="color:var(--err)">${esc(e.message)}</div></div>`;
+  }
+}
+
+/* ---------------- 视频列表 ---------------- */
+async function loadVideos() {
+  try {
+    const r = await api("/videos");
+    if (!r.ok) throw new Error(detailOf(r));
+    state.videos = r.data;
+    renderVideos();
+  } catch (e) {
+    $("#videoRows").innerHTML = `<tr><td colspan="9" class="empty" style="color:var(--err)">${esc(e.message)}</td></tr>`;
+  }
+}
+function renderVideos() {
+  const list = state.videos;
+  const kf = list.reduce((a, v) => a + v.keyframe_count, 0);
+  const ch = list.reduce((a, v) => a + v.chapter_count, 0);
+  $("#videoTotals").textContent = list.length
+    ? `共 ${list.length} 个视频 · 关键帧 ${kf} · 章节 ${ch}` : "";
+  if (!list.length) {
+    $("#videoRows").innerHTML = `<tr><td colspan="9" class="empty">暂无视频，请先在左侧上传</td></tr>`;
+    return;
+  }
+  $("#videoRows").innerHTML = list.map((v) => {
+    const res = v.width ? `${v.width}×${v.height}` : "—";
+    const ops = `
+      <div class="row-actions">
+        <button data-act="analyze" data-id="${v.id}" ${v.latest_task_status === "running" || v.latest_task_status === "pending" ? "disabled" : ""}>分析</button>
+        <button data-act="result" data-id="${v.id}" ${v.latest_task_id ? "" : "disabled"}>结果</button>
+      </div>`;
+    return `<tr>
+      <td>${v.id}</td>
+      <td class="name" title="${esc(v.filename)}">${esc(v.filename)}</td>
+      <td class="num">${fmtDuration(v.duration)}</td>
+      <td>${res}${v.fps ? ` · ${Math.round(v.fps * 100) / 100}fps` : ""}</td>
+      <td class="num">${v.keyframe_count}</td>
+      <td class="num">${v.chapter_count}</td>
+      <td class="num">${v.task_count}</td>
+      <td>${v.latest_task_status ? pill(v.latest_task_status) + ` <span style="color:var(--muted);font-size:12px">#${v.latest_task_id}</span>` : "<span style='color:var(--muted)'>—</span>"}</td>
+      <td>${ops}</td>
+    </tr>`;
+  }).join("");
+}
+$("#videoRows").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("button[data-act]");
+  if (!btn) return;
+  const id = btn.dataset.id;
+  if (btn.dataset.act === "analyze") analyzeVideo(id);
+  if (btn.dataset.act === "result") showResultForVideo(id);
+});
+
+/* ---------------- 上传 ---------------- */
+const dropZone = $("#dropZone"), fileInput = $("#fileInput");
+dropZone.addEventListener("click", () => fileInput.click());
+["dragenter", "dragover"].forEach((t) => dropZone.addEventListener(t, (e) => {
+  e.preventDefault(); dropZone.classList.add("hover");
+}));
+["dragleave", "drop"].forEach((t) => dropZone.addEventListener(t, (e) => {
+  e.preventDefault(); dropZone.classList.remove("hover");
+}));
+dropZone.addEventListener("drop", (e) => {
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) uploadFile(f);
+});
+fileInput.addEventListener("change", () => {
+  if (fileInput.files[0]) uploadFile(fileInput.files[0]);
+  fileInput.value = "";
+});
+
+function setUploadMsg(text, cls) {
+  const el = $("#uploadMsg");
+  el.textContent = text;
+  el.className = "msg " + (cls || "info");
+}
+function uploadFile(file) {
+  $("#btnAnalyzeNew").disabled = true;
+  $("#btnGotoResult").disabled = true;
+  $("#uploadBar").style.width = "0%";
+  setUploadMsg(`正在上传 ${file.name} …`, "info");
+
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", "/videos");
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) {
+      const pct = Math.round((e.loaded / e.total) * 100);
+      $("#uploadBar").style.width = pct + "%";
+      setUploadMsg(`正在上传 ${file.name} … ${pct}%`, "info");
+    }
+  };
+  xhr.onload = () => {
+    let body = null;
+    try { body = JSON.parse(xhr.responseText); } catch (_) { /* ignore */ }
+    if (xhr.status === 201 && body) {
+      $("#uploadBar").style.width = "100%";
+      state.lastVideoId = body.id;
+      setUploadMsg(`上传成功：#${body.id} ${body.filename}`, "ok");
+      $("#btnAnalyzeNew").disabled = false;
+      $("#btnGotoResult").disabled = false;
+      refreshAll();
+    } else {
+      $("#uploadBar").style.width = "0%";
+      setUploadMsg(`上传失败 ${xhr.status}：${(body && body.detail) || xhr.responseText.slice(0, 200)}`, "err");
+    }
+  };
+  xhr.onerror = () => setUploadMsg("上传失败：网络错误（服务是否在运行？）", "err");
+  const fd = new FormData();
+  fd.append("file", file);
+  xhr.send(fd);
+}
+$("#btnAnalyzeNew").addEventListener("click", () => {
+  if (state.lastVideoId) analyzeVideo(state.lastVideoId);
+});
+$("#btnGotoResult").addEventListener("click", () => {
+  if (state.lastVideoId) showResultForVideo(state.lastVideoId);
+});
+
+/* ---------------- 分析任务 ---------------- */
+async function analyzeVideo(videoId) {
+  try {
+    const r = await api(`/videos/${videoId}/analyze`, { method: "POST" });
+    if (!r.ok) throw new Error(detailOf(r));
+    setUploadMsg(`已创建任务 #${r.data.task_id}（视频 #${videoId}），后台执行中…`, "ok");
+    await loadTasks();
+    $("#taskSelect").value = String(r.data.task_id);
+    selectTaskChanged();
+    refreshAll();
+  } catch (e) {
+    setUploadMsg(`发起分析失败：${e.message}`, "err");
+  }
+}
+
+async function loadTasks() {
+  try {
+    const r = await api("/tasks");
+    if (!r.ok) throw new Error(detailOf(r));
+    const prev = $("#taskSelect").value;
+    state.tasks = r.data;
+    state.tasksLoaded = true;
+    if (!state.tasks.length) {
+      $("#taskSelect").innerHTML = `<option value="">暂无任务</option>`;
+      return;
+    }
+    $("#taskSelect").innerHTML = state.tasks.map((t) =>
+      `<option value="${t.task_id}">#${t.task_id} · 视频${t.video_id} ${esc(t.video_filename)} · ${t.status}</option>`
+    ).join("");
+    if (prev && state.tasks.some((t) => String(t.task_id) === prev)) $("#taskSelect").value = prev;
+    else $("#taskSelect").value = String(state.tasks[0].task_id);
+    selectTaskChanged();
+  } catch (e) {
+    $("#taskSelect").innerHTML = `<option value="">任务加载失败</option>`;
+  }
+}
+function currentTask() {
+  const id = Number($("#taskSelect").value);
+  return state.tasks.find((t) => t.task_id === id) || null;
+}
+function selectTaskChanged() {
+  const t = currentTask();
+  $("#taskStatusPill").innerHTML = t ? pill(t.status) : "";
+}
+$("#taskSelect").addEventListener("change", selectTaskChanged);
+$("#btnLoadResult").addEventListener("click", () => {
+  const t = currentTask();
+  if (!t) return;
+  loadResult(t.task_id);
+});
+
+async function showResultForVideo(videoId) {
+  const t = state.tasks.find((x) => x.video_id === videoId);
+  if (!t) {
+    await loadTasks();
+    const t2 = state.tasks.find((x) => x.video_id === videoId);
+    if (t2) { $("#taskSelect").value = String(t2.task_id); selectTaskChanged(); await loadResult(t2.task_id); }
+    else $("#resultBox").innerHTML = `<span class="msg err">视频 #${videoId} 暂无任务，请先「分析」。</span>`;
+    return;
+  }
+  $("#taskSelect").value = String(t.task_id);
+  selectTaskChanged();
+  await loadResult(t.task_id);
+}
+
+async function loadResult(taskId) {
+  const box = $("#resultBox");
+  box.className = "msg info";
+  box.textContent = "查询中…";
+  try {
+    const r = await api(`/tasks/${taskId}/result`);
+    if (r.status !== 200) {
+      box.className = "msg err";
+      box.textContent = `查询失败（${r.status}）：${detailOf(r)}`;
+      return;
+    }
+    const d = r.data;
+    const chips = (d.keywords || []).map((k) => `<span class="chip">${esc(k)}</span>`).join("") || "<span style='color:var(--muted)'>无</span>";
+    const chapters = (d.chapters || []).map((c) => `
+      <div class="chapter">
+        <div class="t">${esc(c.start)}</div>
+        <div class="c"><b>${esc(c.title)}</b><span>${esc(c.summary)}</span></div>
+      </div>`).join("") || "<div class='empty'>无章节</div>";
+    box.className = "";
+    box.innerHTML = `
+      <dl class="kv">
+        <dt>摘要 summary</dt>
+        <dd>${esc(d.summary) || "<span style='color:var(--muted)'>无</span>"}</dd>
+        <dt>关键词 keywords（${(d.keywords || []).length}）</dt>
+        <dd class="chips">${chips}</dd>
+        <dt>章节 chapters（${(d.chapters || []).length} 个内容分片）</dt>
+        <dd>${chapters}</dd>
+        <dt>转写 transcript</dt>
+        <dd>
+          <details class="transcript"><summary>展开全文（${(d.transcript || "").length} 字）</summary>
+            <p>${esc(d.transcript) || "（空）"}</p>
+          </details>
+        </dd>
+        <dt>完成时间</dt>
+        <dd>${esc(d.finished_at || "—")}</dd>
+      </dl>`;
+  } catch (e) {
+    box.className = "msg err";
+    box.textContent = `查询失败：${e.message}`;
+  }
+}
+
+/* ---------------- API 控制台 ---------------- */
+function syncBodyVisibility() {
+  $("#apiBody").hidden = $("#apiMethod").value === "GET";
+}
+$("#apiMethod").addEventListener("change", syncBodyVisibility);
+document.querySelectorAll(".presets button").forEach((b) => b.addEventListener("click", () => {
+  $("#apiMethod").value = b.dataset.m;
+  $("#apiPath").value = b.dataset.p;
+  syncBodyVisibility();
+  sendApi();
+}));
+$("#btnSend").addEventListener("click", sendApi);
+$("#apiPath").addEventListener("keydown", (e) => { if (e.key === "Enter") sendApi(); });
+
+async function sendApi() {
+  const method = $("#apiMethod").value;
+  const path = $("#apiPath").value.trim();
+  if (!path) return;
+  const opts = { method };
+  if (method === "POST") {
+    const body = $("#apiBody").value.trim();
+    if (body) {
+      try { JSON.parse(body); } catch (_) {
+        $("#apiMeta").innerHTML = `<span class="code-4">请求体不是合法 JSON</span>`;
+        return;
+      }
+      opts.headers = { "Content-Type": "application/json" };
+      opts.body = body;
+    }
+  }
+  $("#apiMeta").textContent = "发送中…";
+  try {
+    const r = await api(path, opts);
+    const cls = "code-" + String(r.status)[0];
+    $("#apiMeta").innerHTML =
+      `<span class="${cls}">HTTP ${r.status}</span> · ${r.ms} ms · ${method} ${esc(path)}`;
+    $("#apiResp").textContent = typeof r.data === "string"
+      ? r.data || "(空响应体)"
+      : JSON.stringify(r.data, null, 2);
+  } catch (e) {
+    $("#apiMeta").innerHTML = `<span class="code-4">请求失败</span>`;
+    $("#apiResp").textContent = String(e);
+  }
+}
+
+/* ---------------- 日志 ---------------- */
+async function loadLogs() {
+  try {
+    const level = $("#logLevel").value;
+    const qs = new URLSearchParams({ limit: "300" });
+    if (level) qs.set("level", level);
+    const r = await api("/logs?" + qs.toString());
+    if (!r.ok) throw new Error(detailOf(r));
+    const box = $("#logList");
+    const items = r.data.items || [];
+    $("#logCount").textContent = items.length
+      ? `显示 ${items.length} / 缓冲 ${r.data.total}` : `缓冲 ${r.data.total} 条`;
+    if (!items.length) {
+      box.innerHTML = `<div class="log"><span class="ms" style="color:var(--muted)">暂无日志（发起一次分析即可看到流程）</span></div>`;
+      return;
+    }
+    box.innerHTML = items.map((l) => `
+      <div class="log ${esc(l.level)}">
+        <span class="t">${esc(l.ts.slice(11))}</span>
+        <span class="lv">${esc(l.level)}</span>
+        <span class="lg" title="${esc(l.logger)}">${esc(l.logger.replace(/^app\./, ""))}</span>
+        <span class="ms">${esc(l.message)}</span>
+      </div>`).join("");
+    if ($("#logAuto").checked) box.scrollTop = box.scrollHeight;
+  } catch (e) {
+    $("#logList").innerHTML = `<div class="log"><span class="ms" style="color:var(--err)">${esc(e.message)}</span></div>`;
+  }
+}
+$("#logLevel").addEventListener("change", loadLogs);
+$("#btnLogClear").addEventListener("click", () => {
+  $("#logList").innerHTML = `<div class="log"><span class="ms" style="color:var(--muted)">已清屏（服务端缓冲未清）</span></div>`;
+});
+
+/* ---------------- 轮询 ---------------- */
+async function refreshAll() {
+  await Promise.all([loadHealth(), loadVideos(), loadTasks(), loadLogs()]);
+}
+let ticking = false;
+setInterval(async () => {
+  if (!$("#autoRefresh").checked || ticking || document.hidden) return;
+  ticking = true;
+  try { await refreshAll(); } finally { ticking = false; }
+}, 2500);
+$("#btnRefresh").addEventListener("click", refreshAll);
+
+/* ---------------- 启动 ---------------- */
+syncBodyVisibility();
+Promise.all([loadHealth(), loadSettings(), loadVideos(), loadTasks(), loadLogs()]);
+</script>
+</body>
+</html>

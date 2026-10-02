@@ -1,6 +1,7 @@
 """视频上传与查询 API（阶段四）。
 
 - POST /videos：类型检查 → 大小检查 → 保存 → ffprobe 元数据 → 建 Video 记录。
+- GET /videos：列表（关键帧数/章节数/最近任务状态，控制面板用）。
 - GET /videos/{video_id}：查询视频信息；不存在返回 404。
 """
 
@@ -15,7 +16,8 @@ from sqlalchemy.orm import Session
 from app import config
 from app.database.database import get_db
 from app.database.repository import VideoRepository
-from app.schemas.video import VideoCreateResponse, VideoDetailResponse
+from app.schemas.video import VideoCreateResponse, VideoDetailResponse, VideoListResponse
+from app.services.panel_service import list_video_summaries
 from app.services.video_service import VideoServiceError, get_video_info
 
 router = APIRouter(prefix="/videos", tags=["videos"])
@@ -99,6 +101,12 @@ async def upload_video(
 
     # 5) 返回 {id, filename}
     return VideoCreateResponse(id=video.id, filename=video.filename)
+
+
+@router.get("", response_model=list[VideoListResponse])
+def list_videos(db: Session = Depends(get_db)) -> list[VideoListResponse]:
+    """视频列表（新→旧）：含关键帧数、章节数与最近任务状态，控制面板用。"""
+    return [VideoListResponse(**row) for row in list_video_summaries(db)]
 
 
 @router.get("/{video_id}", response_model=VideoDetailResponse)

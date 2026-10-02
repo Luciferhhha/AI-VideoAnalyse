@@ -7,11 +7,13 @@ AI Coding Agent 驱动的视频智能分析与内容工程平台：上传视频 
 - 上传视频（≤500MB，6 种格式）自动用 ffprobe 解析元数据；
 - 一键发起分析任务，后台完成：音频提取（FFmpeg）→ 语音转文字（mimo API）→ 关键帧抽取（OpenCV）→ AI 摘要/关键词/章节（mimo 多模态）→ 结果落库；
 - 核心链路是 LLM 驱动的 8-Tool Agent 循环，也保留直连链路作对照与降级；
+- 本地**控制面板**（`GET /`，单文件 HTML）覆盖：视频上传、分片/关键帧统计、分析结果、API 控制、日志流程；
 - 开发全程由 AI Coding Agent 按计划书逐阶段推进（阶段一~十四），每阶段验证→commit→登记日志。
 
 ## 2. 特点
 
 - **Agent Tool Calling**：8 个 Tool、`MAX_TOOL_CALLS=10` 上限、错误回填可自纠，全程落日志；
+- **控制面板**：零构建的单文件静态页（`app/static/index.html`），纯原生 JS/CSS，无外部 CDN；`/docs` 仍为 Swagger 文档；
 - **异步任务**：`POST /videos/{id}/analyze` 立即 202，后台执行，状态机 `pending→running→success|failed`，失败带 `error_message` 且服务不崩溃；
 - **无 API Key 可跑**：三处 provider（转写/分析/Agent）均可切 `mock`，全量测试不依赖 Key；
 - **可切换接口**：本地 Whisper 接口预留（第一版不启用），mimo 为唯一外部依赖；
@@ -45,14 +47,15 @@ AI Coding Agent 驱动的视频智能分析与内容工程平台：上传视频 
 ```
 video-agent/
 ├── app/
-│   ├── api/            # 路由（routes_videos / routes_tasks）
+│   ├── api/            # 路由（routes_videos / routes_tasks / routes_panel）
 │   ├── agent/          # prompts.py / tools.py / agent.py（Tool Calling 核心）
 │   ├── database/       # models + repository（唯一写 SQL 处）
 │   ├── schemas/        # Pydantic 契约
-│   ├── services/       # video/audio/transcription/keyframe/analysis/task
+│   ├── services/       # video/audio/transcription/keyframe/analysis/task/log/panel
+│   ├── static/         # 控制面板单文件页 index.html（GET / 返回）
 │   ├── config.py       # 全部配置与环境变量
 │   └── main.py         # FastAPI 入口、logging、全局异常
-├── tests/              # 115 条测试（conftest.py 共享 fixture）
+├── tests/              # 134 条测试（conftest.py 共享 fixture）
 ├── tools/              # 真实环境探针（task_probe / transcription_probe）
 ├── docs/               # architecture / api / agent / agent-development / test-report / development-log
 ├── data/               # uploads / outputs / database（运行时生成，不入库）
@@ -94,6 +97,8 @@ python -m venv .venv
 curl http://127.0.0.1:8000/health    # {"status": "ok"}
 ```
 
+启动后浏览器打开 **http://127.0.0.1:8000/** 即为控制面板（`/docs` 仍是 Swagger 文档）。
+
 无 Key 全 mock 模式（本地体验整条链路）：
 
 ```powershell
@@ -105,9 +110,12 @@ $env:AGENT_PROVIDER='mock'; $env:TRANSCRIPTION_PROVIDER='mock'; $env:ANALYSIS_PR
 
 ```powershell
 curl -X POST http://127.0.0.1:8000/videos -F "file=@demo.mp4"        # 201 {"id":1,...}
-curl http://127.0.0.1:8000/videos/1                                   # 200 元数据
-curl -X POST http://127.0.0.1:8000/videos/1/analyze                   # 202 {"task_id":1,"status":"pending"}
-curl http://127.0.0.1:8000/tasks/1                                    # 200 轮询状态/错误
+curl http://127.0.0.1:8000/videos                                    # 200 列表（关键帧/章节/任务聚合）
+curl http://127.0.0.1:8000/videos/1                                  # 200 元数据
+curl -X POST http://127.0.0.1:8000/videos/1/analyze                  # 202 {"task_id":1,"status":"pending"}
+curl http://127.0.0.1:8000/tasks/1                                   # 200 轮询状态/错误
+curl "http://127.0.0.1:8000/logs?limit=20"                           # 200 最近日志（面板「日志流程」）
+curl http://127.0.0.1:8000/settings                                  # 200 运行配置快照（不含 API Key）
 ```
 
 完整接口、状态码与响应字段见 [docs/api.md](docs/api.md)。
@@ -123,7 +131,7 @@ curl http://127.0.0.1:8000/tasks/1                                    # 200 轮�
 ## 13. 测试方法
 
 ```powershell
-.venv\Scripts\python -m pytest -q        # 115 passed, 1 warning（无 API Key）
+.venv\Scripts\python -m pytest -q        # 134 passed, 1 warning（无 API Key）
 ```
 
 - 全部测试**不需要** `MIMO_API_KEY`（mock provider + `httpx.MockTransport`）；
@@ -132,7 +140,8 @@ curl http://127.0.0.1:8000/tasks/1                                    # 200 轮�
 
 ## 14. 示例运行结果（实测）
 
-- 全量测试：`115 passed, 1 warning in 17.34s`（warning 为已知 starlette testclient 弃用提示）；
+- 全量测试：`134 passed, 1 warning in 7.58s`（warning 为已知 starlette testclient 弃用提示，含 15 条控制面板测试）；
+- 控制面板实测：`GET /` 200（28KB 单文件 HTML，五大区块齐全）、`/videos` 返回既有 9 个视频（如 `keyframe_count=10`、`chapter_count=4`、`latest_task_status=success`）、`/tasks` 4 条、`/settings` 快照 `interval=5.0 / ffmpeg=true / key_configured=false`、`/logs` 捕获到 `app.main startup…`、`/docs` 仍为 Swagger；
 - 探针：`task_probe` 12/12 PASS、`transcription_probe mock` 9/9 PASS、`no-key` 7/7 PASS；
 - 真实日志链：`Agent 启动 video_id=1 task_id=1 max_tool_calls=10` → 8×`Agent 工具调用 tool=… args={}` → `音频提取完成 … 64722 bytes` → `转写完成 provider=mock … 时长=2.0s` → `Agent 完成 tool_calls=8 errors=0` → `任务完成 task_id=1 status=success`；
 - 无 Key 失败路径：任务 `failed`，`error_message="未配置 MIMO_API_KEY（环境变量或 app/config.py），无法调用 mimo Agent API。"`，`/health` 与视频查询仍 200。
@@ -148,11 +157,14 @@ curl http://127.0.0.1:8000/tasks/1                                    # 200 轮�
 - `tests/test_api.py` 自带一个非隔离 `client` fixture（lifespan 用真实库），与 conftest 隔离 fixture 同名不同行为；
 - 中文 Windows 控制台日志为 GBK 显示乱码（仅显示问题，写入与逻辑均为 UTF-8）；
 - 真实 mimo API 链路**尚未用真实 Key 回归**（按约定初版完成后填 Key 验证）；
-- `whisper` 提供方仅预留接口，调用即报「第一版不启用」。
+- `whisper` 提供方仅预留接口，调用即报「第一版不启用」；
+- 控制面板日志为**进程内环形缓冲**（1000 条，重启即清空），不是文件日志；`logs/launcher.log` 仅记录启动信息；
+- 面板列表无分页/搜索（`GET /videos`、`GET /tasks` 全量返回，本地小数据量够用）。
 
 ## 17. 后续计划
 
 - 填写 `MIMO_API_KEY` 后对转写/分析/Agent 三链路做真实 API 回归；
 - 分析结果列表接口（按视频列出历史任务结果）；
+- 控制面板增强：多文件上传队列、结果导出、日志过滤与导出（第一版为单文件简洁面板）；
 - 计划书阶段十五（另行启动）：整理 12 项交付物、简历描述、GitHub 开源；
 - 本地 Whisper 提供方落地（接口已预留）、多任务并发与限流优化。

@@ -674,3 +674,42 @@
 ### 个人确认
 
 （待用户实际运行确认后填写）
+
+---
+
+## 增量：本地控制面板（单文件 HTML UI）— 2026-10-02
+
+### 任务范围
+
+用户要求：框架已搭好，做一个本地端口的 HTML 控制面板，简洁明了，显示「视频上传」「视频分片数/关键帧数」「分析结果」「API控制」「日志流程」，并询问是否可以基于 `http://127.0.0.1:8000/docs` 修改（由我判断）。
+
+判断结论：**不改造 Swagger `/docs`** —— 覆盖 swagger-ui 静态资源脆弱、无法承载上传进度条/轮询刷新/日志流等定制交互，且会破坏既有 API 文档。改为自建零依赖单文件静态页，`GET /` 返回页面，`/docs` 原样保留。
+
+### 完成内容
+
+- 新建 `app/static/index.html`（约 28KB，纯原生 HTML/CSS/JS，零外部 CDN、零构建）：顶栏健康灯 + 2.5s 自动刷新开关 + `/docs` 链接；五大区块——①视频上传（拖拽/点击 + XHR 进度条，201 后可直接「发起分析」「查看结果」）②视频·分片与关键帧表格（含合计行）③分析结果（任务下拉 → `GET /tasks/{id}/result` 渲染摘要/关键词/章节时间轴/转写）④API 控制（`GET /settings` 配置快照 + method/path/body 请求控制台与预设按钮）⑤日志流程（`GET /logs` 按级别着色、level 筛选、自动滚动）。
+- 新增端点：`GET /`（页面，`include_in_schema=False`，文件缺失 404）、`GET /videos`（列表聚合）、`GET /tasks`（列表）、`GET /logs`（`limit` 1–1000 默认 200、`level` 阈值过滤，非法 422）、`GET /settings`（配置快照，**不含 API Key 明文**）。
+- 新增 `app/services/panel_service.py`（视频/任务列表聚合 + `count_keyframes` 磁盘实数 + `settings_snapshot`）、`app/services/log_service.py`（进程内 1000 条环形缓冲 `MemoryLogHandler`，`install()` 幂等挂 root）、`app/api/routes_panel.py`、`app/schemas/panel.py`；`app/schemas/video.py` 加 `VideoListResponse`、`app/schemas/task.py` 加 `TaskListResponse`；`app/database/repository.py` 的 `TaskRepository` 加 `list_all()`；`app/config.py` 加 `APP_TITLE/APP_VERSION`；`app/main.py` 挂 router、lifespan 调 `log_service.install()`。
+- 「分片数」落地口径：`chapters`（内容章节，分析成功才有）计为 `chapter_count` + 关键帧磁盘实数 `keyframe_count`，**不虚构数据**（ASR 降级为单段，segments 未持久化）。
+- `tests/test_panel.py` 15 条；文档同步：`docs/api.md` 新增第 7 节（面板 5 端点 + 示例）且总览表扩到 11 行、原 7/8 节顺延为 8/9；README 第 1/2/5/9/10/13/14/16/17 节同步。
+
+### 实现要点
+
+- 分层遵守计划书硬约束：路由不写 SQL，聚合全部走 `Repository`（`VideoRepository/TaskRepository/ResultRepository`）。
+- `/settings` 只回传 `mimo.api_key_configured` 布尔值，有测试专门 monkeypatch Key 明文断言不泄露。
+- 日志为进程内缓冲而非新增日志文件：面板「日志流程」读内存，重启即清空，不改既有 `logs/launcher.log` 语义。
+
+### 验证结果
+
+- 全量 pytest **134 passed, 1 warning**（119 旧 + 15 面板新），无回归。
+- 真实服务实测（`run.py` 后台启动）：`GET /` → 200 `text/html` 28471 字节、五大区块文案齐全；`/videos` → 200（既有 9 个视频，样例 `keyframe_count=10 / chapter_count=4 / latest_task_status=success`）；`/tasks` → 200（4 条，含 `video_filename`）；`/settings` → 200（`providers=mimo×3 + agent 驱动`、`interval=5.0`、`ffmpeg=true`、`key_configured=false`，全文无 `sk-`）；`/logs?limit=5` → 捕获到 `app.main startup: runtime directories and database ready`；`/docs` → 200 仍为 Swagger；`limit=0` 与 `level=BOGUS` → 422。
+
+### 遇到的问题与观察
+
+1. **root logger 级别被宿主抬到 WARNING 时 INFO 全丢**：`log_service` 首版挂 handler 不管 logger 级别，测试里 `basicConfig` 因 pytest 已挂 handler 而失效，root 仍是默认 WARNING → 任务流程 INFO 日志一条都进不了缓冲（`/logs` 空）。修复：`install()` 里若 `root.getEffectiveLevel() > INFO` 则降到 INFO（应用本就要求 INFO 日志），幂等早退路径不受影响。
+2. 「分片数」不能等同 ASR segments：转写降级为单段未持久化，真实可用的内容分片只有 `chapters` —— 面板标题写「章节分片」并在文档写明口径，避免给用户错误数字。
+3. 不动 `/docs` 的取舍：定制面板需要上传进度、轮询、日志着色、控制台，swagger-ui 的静态资源覆盖既脆弱又会在 FastAPI 升级时碎；自建单页零依赖，`/docs` 与面板各司其职。
+
+### 个人确认
+
+（待用户实际运行确认后填写）

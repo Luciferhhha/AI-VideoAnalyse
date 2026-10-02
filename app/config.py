@@ -3,6 +3,10 @@
 import os
 from pathlib import Path
 
+# 应用元信息（FastAPI 标题/版本与控制面板 GET /settings 共用，避免两处字面量）
+APP_TITLE = "视频智能分析平台"
+APP_VERSION = "0.1.0"
+
 # 项目根目录
 BASE_DIR = Path(__file__).resolve().parent.parent
 

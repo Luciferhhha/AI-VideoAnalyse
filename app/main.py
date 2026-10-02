@@ -2,14 +2,17 @@
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, JSONResponse
 
 from app import config
+from app.api.routes_panel import router as panel_router
 from app.api.routes_tasks import router as tasks_router
 from app.api.routes_videos import router as videos_router
 from app.database.database import init_db
+from app.services import log_service
 from app.services.video_service import (
     FFmpegNotFoundError,
     InvalidVideoError,
@@ -23,19 +26,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 控制面板页面（单文件静态页，无构建步骤）
+PANEL_HTML: Path = config.BASE_DIR / "app" / "static" / "index.html"
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     config.ensure_dirs()
+    log_service.install()  # 面板「日志流程」的内存环形缓冲（幂等）
     init_db()
     logger.info("startup: runtime directories and database ready")
     yield
 
 
-app = FastAPI(title="视频智能分析平台", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title=config.APP_TITLE, version=config.APP_VERSION, lifespan=lifespan)
 
 app.include_router(videos_router)
 app.include_router(tasks_router)
+app.include_router(panel_router)
+
+
+@app.get("/", include_in_schema=False)
+def panel_index() -> FileResponse:
+    """控制面板页面（/docs 仍为 FastAPI 自带 Swagger 文档）。"""
+    if not PANEL_HTML.is_file():
+        raise HTTPException(status_code=404, detail=f"控制面板页面缺失：{PANEL_HTML}")
+    return FileResponse(PANEL_HTML, media_type="text/html; charset=utf-8")
 
 
 @app.exception_handler(VideoServiceError)

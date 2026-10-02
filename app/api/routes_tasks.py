@@ -1,6 +1,7 @@
 """异步分析任务 API（阶段五）。
 
 - POST /videos/{video_id}/analyze：创建 task → 立即返回 task_id → 后台执行。
+- GET /tasks：任务列表（新→旧，控制面板轮询状态用）。
 - GET /tasks/{task_id}：返回状态，失败时带 error_message。
 - GET /tasks/{task_id}/result：任务成功后返回分析产物（摘要/关键词/章节/转写）。
 """
@@ -14,7 +15,13 @@ from sqlalchemy.orm import Session
 
 from app.database.database import get_db
 from app.database.repository import ResultRepository, TaskRepository, VideoRepository
-from app.schemas.task import TaskCreateResponse, TaskDetailResponse, TaskResultResponse
+from app.schemas.task import (
+    TaskCreateResponse,
+    TaskDetailResponse,
+    TaskListResponse,
+    TaskResultResponse,
+)
+from app.services.panel_service import list_task_summaries
 from app.services.task_service import run_analysis_task
 
 router = APIRouter(tags=["tasks"])
@@ -53,6 +60,12 @@ def create_analyze_task(
     background_tasks.add_task(run_analysis_task, task.id, db.get_bind())
 
     return TaskCreateResponse(task_id=task.id, video_id=task.video_id, status=task.status)
+
+
+@router.get("/tasks", response_model=list[TaskListResponse])
+def list_tasks(db: Session = Depends(get_db)) -> list[TaskListResponse]:
+    """任务列表（新→旧）：状态、时间戳与失败原因，控制面板轮询用。"""
+    return [TaskListResponse(**row) for row in list_task_summaries(db)]
 
 
 @router.get("/tasks/{task_id}", response_model=TaskDetailResponse)

@@ -103,6 +103,10 @@ class TaskRepository:
         )
         return list(self.session.scalars(stmt))
 
+    def list_all(self) -> list[AnalysisTask]:
+        """全部任务，按 id 升序（控制面板列表由调用方自行倒序）。"""
+        return list(self.session.scalars(select(AnalysisTask).order_by(AnalysisTask.id)))
+
     def update_status(
         self,
         task_id: int,
